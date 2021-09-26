@@ -32,5 +32,12 @@ async def pypistats(pypistats_path: str):
     return Response(content=proxy.content, status_code=proxy.status_code, media_type="application/json")
 
 
+@app.get("/api/github/{github_path:path}")
+async def github(github_path: str):
+    async with httpx.AsyncClient() as client:
+        proxy: httpx.Response = await client.get(f"https://api.github.com/{github_path}")
+    return Response(content=proxy.content, status_code=proxy.status_code, media_type="application/json")
+
+
 if __name__ == "__main__":
     uvicorn.run(f"{__name__}:app", port=8081, reload=True)
