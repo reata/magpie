@@ -9,6 +9,9 @@ from fastapi import Response
 from fastapi.middleware.cors import CORSMiddleware
 from pandas import DataFrame
 
+from magpie.settings import GITHUB_ACCESS_TOKEN
+
+
 app = FastAPI()
 
 origins = ["http://localhost:8000", "https://reata.github.io"]
@@ -44,7 +47,8 @@ async def pypistats(pypistats_path: str):
 async def github(github_path: str):
     async with httpx.AsyncClient() as client:
         proxy: httpx.Response = await client.get(
-            f"https://api.github.com/{github_path}"
+            f"https://api.github.com/{github_path}",
+            headers={"Authorization": f"token {GITHUB_ACCESS_TOKEN}"},
         )
     return Response(
         content=proxy.content,
@@ -62,7 +66,10 @@ async def starhistory(repo: str):
         while True:
             proxy: httpx.Response = await client.get(
                 f"https://api.github.com/repos/{repo}/stargazers?per_page={per_page}&page={page}",
-                headers={"Accept": "application/vnd.github.v3.star+json"},
+                headers={
+                    "Accept": "application/vnd.github.v3.star+json",
+                    "Authorization": f"token {GITHUB_ACCESS_TOKEN}",
+                },
             )
             ts = [stargazer["starred_at"] for stargazer in proxy.json()]
             star_ts.extend(ts)
