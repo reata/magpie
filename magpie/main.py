@@ -10,11 +10,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from pandas import DataFrame
 
 from magpie.settings import GITHUB_ACCESS_TOKEN
-
+from magpie.routers import sqllineage
 
 app = FastAPI()
+app.include_router(sqllineage.router)
 
-origins = ["http://localhost:8000", "https://reata.github.io"]
+origins = ["http://localhost:3000", "http://localhost:8000", "https://reata.github.io"]
 
 app.add_middleware(
     CORSMiddleware,
