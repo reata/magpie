@@ -2,8 +2,12 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from sqllineage.drawing import (
     directory as o_directory,
-    script as o_script,
+)
+from sqllineage.drawing import (
     lineage as o_lineage,
+)
+from sqllineage.drawing import (
+    script as o_script,
 )
 
 from magpie.models import Directory, SQLLineageInput

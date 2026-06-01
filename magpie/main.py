@@ -3,14 +3,13 @@ from datetime import datetime
 
 import httpx
 import uvicorn
-from dateutil.rrule import rrule, DAILY
-from fastapi import FastAPI
-from fastapi import Response
+from dateutil.rrule import DAILY, rrule
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pandas import DataFrame
 
-from magpie.settings import GITHUB_ACCESS_TOKEN
 from magpie.routers import sqllineage
+from magpie.settings import GITHUB_ACCESS_TOKEN
 
 app = FastAPI()
 app.include_router(sqllineage.router)
@@ -92,5 +91,10 @@ async def starhistory(repo: str):
     return Response(content=df.to_json(orient="records"), media_type="application/json")
 
 
+def dev():
+    """Start the development server with hot reload."""
+    uvicorn.run("magpie.main:app", port=8081, reload=True)
+
+
 if __name__ == "__main__":
-    uvicorn.run(f"{__name__}:app", port=8081, reload=True)
+    dev()
