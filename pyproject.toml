@@ -5,14 +5,14 @@ description = "API server for reata.github.io"
 readme = "README.md"
 requires-python = "~=3.14.0"
 dependencies = [
-    "fastapi>=0.68.1,<1.0.0",
+    "fastapi>=0.141.1,<1.0.0",
     "httpx>=0.23.0,<1.0.0",
     "pandas>=2.2.3,<3.0.0",
     "numpy>=2.3.2,<3.0.0",
     "python-dateutil>=2.8.2,<3.0.0",
     "python-dotenv>=0.20.0,<1.0.0",
     "sqllineage>=1.5.4,<2.0.0",
-    "uvicorn>=0.15.0,<1.0.0",
+    "uvicorn>=0.52.4,<1.0.0",
 ]
 
 [project.scripts]
@@ -21,8 +21,8 @@ dev = "magpie.main:dev"
 [dependency-groups]
 dev = [
     "pandas-stubs>=2.3.3,<3.0.0",
-    "ruff>=0.5.0",
-    "pytest>=8.0",
+    "ruff>=0.16.3",
+    "pytest>=9.1.1",
 ]
 
 [tool.uv]
