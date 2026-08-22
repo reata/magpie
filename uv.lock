@@ -231,7 +231,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.3.2,<3.0.0" },
     { name = "pandas", specifier = ">=2.2.3,<3.0.0" },
     { name = "python-dateutil", specifier = ">=2.8.2,<3.0.0" },
-    { name = "python-dotenv", specifier = ">=0.20.0,<1.0.0" },
+    { name = "python-dotenv", specifier = ">=1.2.3,<2.0.0" },
     { name = "sqllineage", specifier = ">=1.5.4,<2.0.0" },
     { name = "uvicorn", specifier = ">=0.52.4,<1.0.0" },
 ]
@@ -482,11 +482,11 @@ wheels = [
 
 [[package]]
 name = "python-dotenv"
-version = "0.21.1"
+version = "1.2.3"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/f5/d7/d548e0d5a68b328a8d69af833a861be415a17cb15ce3d8f0cd850073d2e1/python-dotenv-0.21.1.tar.gz", hash = "sha256:1c93de8f636cde3ce377292818d0e440b6e45a82f215c3744979151fa8151c49", size = 35930, upload-time = "2023-01-21T10:22:47.277Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6a/53/ed9d74092561d4b01a2ef1349d52cdbc135e526c245f366b089cfca6de49/python_dotenv-1.2.3.tar.gz", hash = "sha256:a20a594dabeaa385725aa239d5244871c143ecb356add8a20fcf23773a6c3a35", size = 58945, upload-time = "2026-08-16T16:54:54.067Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/64/62/f19d1e9023aacb47241de3ab5a5d5fedf32c78a71a9e365bb2153378c141/python_dotenv-0.21.1-py3-none-any.whl", hash = "sha256:41e12e0318bebc859fcc4d97d4db8d20ad21721a6aa5047dd59f090391cb549a", size = 19284, upload-time = "2023-01-21T10:22:45.958Z" },
+    { url = "https://files.pythonhosted.org/packages/0d/17/c5c6b53ddc18f297992099b3d9ec16c855c0ccc83263a21fe4d1c625ec6c/python_dotenv-1.2.3-py3-none-any.whl", hash = "sha256:904552145e8bfed22162c09dab1c2b9b54fefa7b23ba780f4f26ca0316b0f0d9", size = 22780, upload-time = "2026-08-16T16:54:52.473Z" },
 ]
 
 [[package]]
