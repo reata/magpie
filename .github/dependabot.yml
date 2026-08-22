@@ -26,8 +26,7 @@ updates:
         patterns:
           - "*"
 
-  # Docker base image: patch-level updates only; Python major (3.10) held
-  # deliberately (.python-version pins 3.10), so major tag bumps stay manual
+  # Docker base image: patch-level updates only
   - package-ecosystem: docker
     directory: /
     schedule:
