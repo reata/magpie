@@ -1,0 +1,72 @@
+# Dependabot configuration
+# Docs: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+version: 2
+
+updates:
+  # Python API server (uv): grouped weekly version updates + grouped security updates
+  # uv ecosystem keeps pyproject.toml and uv.lock in sync
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+      day: friday
+      time: "18:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    groups:
+      version-updates:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+        patterns:
+          - "*"
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  # Docker base image: patch-level updates only; Python major (3.10) held
+  # deliberately (.python-version pins 3.10), so major tag bumps stay manual
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: friday
+      time: "18:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    groups:
+      version-updates:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+        patterns:
+          - "*"
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  # GitHub Actions: grouped weekly version updates + grouped security updates
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: friday
+      time: "18:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    groups:
+      version-updates:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+        patterns:
+          - "*"
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
