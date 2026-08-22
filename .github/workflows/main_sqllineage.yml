@@ -27,7 +27,7 @@ jobs:
         password: ${{ secrets.AzureAppService_ContainerPassword_adbe943fad744eb58de924232fdffd4e }}
 
     - name: Build and push container image to registry
-      uses: docker/build-push-action@v3
+      uses: docker/build-push-action@v7
       with:
         push: true
         tags: ghcr.io/${{ secrets.AzureAppService_ContainerUsername_8b6dff4726654e64aab22e2d4cdcd8fe }}/reata/magpie:${{ github.sha }}
