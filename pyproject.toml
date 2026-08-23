@@ -7,8 +7,7 @@ requires-python = "~=3.14.0"
 dependencies = [
     "fastapi>=0.141.1,<1.0.0",
     "httpx>=0.23.0,<1.0.0",
-    "pandas>=2.2.3,<3.0.0",
-    "numpy>=2.3.2,<3.0.0",
+    "pandas>=3.0.5,<4.0.0",
     "python-dateutil>=2.8.2,<3.0.0",
     "python-dotenv>=1.2.3,<2.0.0",
     "sqllineage>=1.5.4,<2.0.0",
@@ -20,7 +19,7 @@ dev = "magpie.main:dev"
 
 [dependency-groups]
 dev = [
-    "pandas-stubs>=2.3.3,<3.0.0",
+    "pandas-stubs>=3.0.5,<4.0.0",
     "ruff>=0.16.3",
     "pytest>=9.1.1",
 ]
