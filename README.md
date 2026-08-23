@@ -11,7 +11,13 @@ API Server for reata.github.io
 
 ```bash
 # Install dependencies
-uv sync
+uv sync --locked
+
+# Activate pre-commit hooks (ruff check + ruff format on commit)
+uv run pre-commit install
+
+# Run tests
+uv run pytest
 
 # Start development server (with hot reload)
 uv run uvicorn magpie.main:app --reload --port 8081
@@ -19,11 +25,8 @@ uv run uvicorn magpie.main:app --reload --port 8081
 # Or use the dev script
 uv run dev
 
-# Run linter
-uv run ruff check magpie/
-
-# Auto-fix lint issues
-uv run ruff check magpie/ --fix
+# Run lint + format manually (same as pre-commit / CI)
+uv run pre-commit run --all-files
 ```
 
 ## Docker

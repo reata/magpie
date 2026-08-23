@@ -20,8 +20,9 @@ dev = "magpie.main:dev"
 [dependency-groups]
 dev = [
     "pandas-stubs>=3.0.5,<4.0.0",
-    "ruff>=0.16.3",
+    "pre-commit>=4.6.2,<5.0.0",
     "pytest>=9.1.1",
+    "ruff>=0.16.3",
 ]
 
 [tool.uv]
