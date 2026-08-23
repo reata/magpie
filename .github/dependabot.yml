@@ -26,7 +26,7 @@ updates:
         patterns:
           - "*"
 
-  # Docker base image: patch-level updates only
+  # Docker base image: grouped weekly version updates + grouped security updates
   - package-ecosystem: docker
     directory: /
     schedule:

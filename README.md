@@ -1,10 +1,10 @@
 # magpie
 
-API Sever for reata.github.io
+API Server for reata.github.io
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.14+
 - [uv](https://docs.astral.sh/uv/)
 
 ## Development
