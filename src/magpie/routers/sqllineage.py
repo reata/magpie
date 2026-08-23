@@ -17,17 +17,17 @@ router = APIRouter(prefix="/api/sqllineage")
 
 @router.post("/directory")
 def directory(_dir: Directory):
-    data = o_directory(_dir.dict())
+    data = o_directory(_dir.model_dump())
     return JSONResponse(data)
 
 
 @router.post("/script")
 def script(sinput: SQLLineageInput):
-    data = o_script(sinput.dict())
+    data = o_script(sinput.model_dump())
     return JSONResponse(data)
 
 
 @router.post("/lineage")
 def lineage(sinput: SQLLineageInput):
-    data = o_lineage(sinput.dict())
+    data = o_lineage(sinput.model_dump())
     return JSONResponse(data)
