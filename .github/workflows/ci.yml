@@ -25,7 +25,7 @@ jobs:
         run: uv run ruff format --check src tests
 
       - name: Type check (ty)
-        run: uv run ty check
+        run: uv check --preview-features=check-command --ty-version=0.0.74
 
       - name: Test (pytest)
         run: uv run pytest
