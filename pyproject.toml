@@ -35,6 +35,9 @@ lint.select = ["E", "F", "I", "W"]
 [tool.ruff.lint.isort]
 known-first-party = ["magpie"]
 
+[tool.ty.environment]
+python-version = "3.14"
+
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13"]
 build-backend = "uv_build"

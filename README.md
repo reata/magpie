@@ -13,7 +13,7 @@ API Server for reata.github.io
 # Install dependencies
 uv sync --locked
 
-# Activate pre-commit hooks (ruff check + ruff format on commit)
+# Activate pre-commit hooks (ruff + ty on commit)
 uv run pre-commit install
 
 # Run tests
@@ -25,7 +25,7 @@ uv run uvicorn magpie.main:app --reload --port 8081
 # Or use the dev script
 uv run dev
 
-# Run lint + format manually (same as pre-commit / CI)
+# Run lint + format + type check manually (same as pre-commit / CI)
 uv run pre-commit run --all-files
 ```
 
