@@ -18,4 +18,6 @@ ENV PATH="/app/.venv/bin:$PATH"
 RUN adduser --quiet magpie
 USER magpie
 
-CMD uvicorn magpie.main:app --host 0.0.0.0 --port $PORT
+EXPOSE 8080
+
+CMD ["uvicorn", "magpie.main:app", "--host", "0.0.0.0", "--port", "8080"]

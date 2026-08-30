@@ -33,5 +33,5 @@ uv run pre-commit run --all-files
 
 ```bash
 docker build -t magpie .
-docker run --rm -e PORT=8080 -p 8080:8080 magpie
+docker run --rm -p 8080:8080 magpie
 ```
