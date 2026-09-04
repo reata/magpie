@@ -1,18 +1,22 @@
 from collections import Counter
 from datetime import datetime
+from typing import cast
 
 import httpx
 import uvicorn
+from a2wsgi import WSGIMiddleware
 from dateutil.rrule import DAILY, rrule
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pandas import DataFrame
+from sqllineage.drawing import app as sqllineage_app
+from starlette.types import ASGIApp
 
-from magpie.routers import sqllineage
 from magpie.settings import GITHUB_ACCESS_TOKEN
 
 app = FastAPI()
-app.include_router(sqllineage.router)
+# Expose sqllineage's own WSGI controllers as-is
+app.mount("/api/sqllineage", cast(ASGIApp, WSGIMiddleware(sqllineage_app)))
 
 origins = ["http://localhost:3000", "http://localhost:8000", "https://reata.github.io"]
 
