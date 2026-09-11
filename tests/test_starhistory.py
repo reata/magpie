@@ -7,15 +7,13 @@ construction, and cumulative counts) rather than GitHub's API.
 """
 
 import httpx
-from fastapi.testclient import TestClient
-
-from magpie.main import app
-
-client = TestClient(app)
 
 
 class _FakeResponse:
-    """Minimal ``httpx.Response`` stand-in exposing only ``json()``."""
+    """Minimal ``httpx.Response`` stand-in exposing ``status_code``/``json()``."""
+
+    status_code = 200
+    headers: dict[str, str] = {}
 
     def __init__(self, payload):
         self._payload = payload
@@ -45,7 +43,7 @@ def _stub_github(monkeypatch, pages):
     return captured_urls
 
 
-def test_starhistory_aggregates_stars_by_day(monkeypatch):
+def test_starhistory_aggregates_stars_by_day(client, monkeypatch):
     captured_urls = _stub_github(
         monkeypatch,
         [
@@ -70,7 +68,7 @@ def test_starhistory_aggregates_stars_by_day(monkeypatch):
     ]
 
 
-def test_starhistory_stops_pagination_on_short_page(monkeypatch):
+def test_starhistory_stops_pagination_on_short_page(client, monkeypatch):
     full_page = [{"starred_at": "2026-08-01T10:00:00Z"}] * 100
     captured_urls = _stub_github(monkeypatch, [full_page, []])
 
@@ -84,3 +82,18 @@ def test_starhistory_stops_pagination_on_short_page(monkeypatch):
     assert response.json() == [
         {"date": "2026-08-01", "star_cnt": 100, "star_cum_cnt": 100},
     ]
+
+
+def test_starhistory_reuses_cached_aggregation(client, monkeypatch):
+    # One stubbed page only: a second upstream request would make _stub_github
+    # raise, so passing proves the aggregation was served from cache.
+    captured_urls = _stub_github(
+        monkeypatch, [[{"starred_at": "2026-08-01T10:00:00Z"}]]
+    )
+
+    first = client.get("/api/starhistory/reata/sqllineage")
+    second = client.get("/api/starhistory/reata/sqllineage")
+
+    assert first.status_code == second.status_code == 200
+    assert first.json() == second.json()
+    assert len(captured_urls) == 1
