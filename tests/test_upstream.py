@@ -5,7 +5,7 @@ import asyncio
 import httpx
 import pytest
 
-from magpie.upstream import MAX_ATTEMPTS, UpstreamClient, UpstreamError
+from magpie.clients.upstream import MAX_ATTEMPTS, UpstreamClient, UpstreamError
 
 
 def _run(monkeypatch, responses):

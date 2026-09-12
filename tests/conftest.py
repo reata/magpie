@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import magpie.main as main
+from magpie.routers import github, pypistats
 
 
 @pytest.fixture(scope="session")
@@ -23,8 +24,8 @@ def client():
 @pytest.fixture(autouse=True)
 def clear_caches():
     """Keep the process-wide caches from leaking between tests."""
-    main.pypistats.cache_clear()
-    main.starhistory.cache_clear()
+    pypistats.pypistats.cache_clear()
+    github.starhistory.cache_clear()
     yield
-    main.pypistats.cache_clear()
-    main.starhistory.cache_clear()
+    pypistats.pypistats.cache_clear()
+    github.starhistory.cache_clear()
