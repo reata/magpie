@@ -7,8 +7,7 @@ browser requests do not reach the rate-limited upstream.
 import httpx
 import pytest
 
-import magpie.main as main
-from magpie.upstream import UpstreamError
+from magpie.clients.upstream import UpstreamClient, UpstreamError
 
 URL = "https://pypistats.org/api/packages/sqllineage/recent"
 
@@ -24,7 +23,7 @@ def test_caches_upstream_response(client, monkeypatch):
         calls.append(url)
         return _ok()
 
-    monkeypatch.setattr(main.UpstreamClient, "get", fake_get)
+    monkeypatch.setattr(UpstreamClient, "get", fake_get)
 
     first = client.get("/api/pypistats/api/packages/sqllineage/recent")
     second = client.get("/api/pypistats/api/packages/sqllineage/recent")
@@ -41,7 +40,7 @@ def test_cache_key_is_the_path(client, monkeypatch):
         calls.append(url)
         return _ok()
 
-    monkeypatch.setattr(main.UpstreamClient, "get", fake_get)
+    monkeypatch.setattr(UpstreamClient, "get", fake_get)
 
     # Query strings are neither part of the key nor forwarded: the client never
     # sends them, so the path alone identifies the response.
@@ -59,7 +58,7 @@ def test_returns_503_when_upstream_fails(client, monkeypatch):
     async def rate_limited(self, url, headers=None):
         raise UpstreamError("upstream returned HTTP 429")
 
-    monkeypatch.setattr(main.UpstreamClient, "get", rate_limited)
+    monkeypatch.setattr(UpstreamClient, "get", rate_limited)
 
     response = client.get("/api/pypistats/api/packages/sqllineage/recent")
 
@@ -76,7 +75,7 @@ def test_failure_is_not_cached(client, monkeypatch):
             raise UpstreamError("upstream returned HTTP 429")
         return _ok(b'{"data": {"last_day": 42}}')
 
-    monkeypatch.setattr(main.UpstreamClient, "get", flaky)
+    monkeypatch.setattr(UpstreamClient, "get", flaky)
 
     first = client.get("/api/pypistats/api/packages/sqllineage/recent")
     second = client.get("/api/pypistats/api/packages/sqllineage/recent")
@@ -102,7 +101,7 @@ def test_error_response_is_neither_forwarded_nor_cached(
     async def fake_get(self, url, headers=None):
         return responses.pop(0)
 
-    monkeypatch.setattr(main.UpstreamClient, "get", fake_get)
+    monkeypatch.setattr(UpstreamClient, "get", fake_get)
 
     first = client.get("/api/pypistats/api/packages/sqllineage/recent")
     second = client.get("/api/pypistats/api/packages/sqllineage/recent")

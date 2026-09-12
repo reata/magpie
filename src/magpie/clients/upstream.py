@@ -113,3 +113,8 @@ class UpstreamClient:
         if cause is not None:
             raise last_error from cause
         raise last_error
+
+
+#: The one client every outbound HTTP call shares: one connection pool for the
+#: whole process, closed by the application lifespan.
+upstream = UpstreamClient()
