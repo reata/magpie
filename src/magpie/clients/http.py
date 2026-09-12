@@ -1,4 +1,4 @@
-"""Shared HTTP client for upstream APIs.
+"""Shared HTTP client for the services magpie calls over HTTP.
 
 One pooled ``httpx.AsyncClient`` is reused across requests, and transient server
 errors -- 5xx and transport failures -- are retried with jittered backoff. Rate
@@ -12,6 +12,8 @@ from collections.abc import Awaitable, Callable
 
 import httpx
 
+from magpie.errors import RemoteError
+
 logger = logging.getLogger(__name__)
 
 #: Status codes worth retrying. 429 is deliberately absent: pypistats.org
@@ -24,14 +26,6 @@ BASE_DELAY = 0.5
 MAX_CONCURRENCY = 4
 
 
-class UpstreamError(RuntimeError):
-    """Raised when an upstream call cannot be served to the client.
-
-    Either the request kept failing after every retry, or the response carried a
-    status the caller refuses to forward.
-    """
-
-
 def _backoff(attempt: int) -> float:
     """Full-jitter exponential backoff for ``attempt`` (0-based).
 
@@ -40,7 +34,7 @@ def _backoff(attempt: int) -> float:
     return random.uniform(0, BASE_DELAY * 2**attempt)
 
 
-class UpstreamClient:
+class HttpClient:
     """Async HTTP client that pools connections and retries transient errors."""
 
     def __init__(
@@ -87,7 +81,7 @@ class UpstreamClient:
         further. Every other status -- 4xx and 429 included -- is returned as-is
         for the caller to decide what to forward.
         """
-        last_error = UpstreamError(f"no attempt made for {url}")
+        last_error = RemoteError(f"no attempt made for {url}")
         cause: BaseException | None = None
         client = self._ensure_client()
         for attempt in range(MAX_ATTEMPTS):
@@ -97,11 +91,11 @@ class UpstreamClient:
                     response = await client.get(url, headers=headers)
                 if response.status_code not in RETRYABLE_STATUS:
                     return response
-                last_error = UpstreamError(
+                last_error = RemoteError(
                     f"upstream returned HTTP {response.status_code}"
                 )
             except httpx.TransportError as exc:
-                last_error = UpstreamError(f"upstream request failed: {exc}")
+                last_error = RemoteError(f"upstream request failed: {exc}")
                 cause = exc
 
             if attempt + 1 == MAX_ATTEMPTS:
@@ -117,4 +111,4 @@ class UpstreamClient:
 
 #: The one client every outbound HTTP call shares: one connection pool for the
 #: whole process, closed by the application lifespan.
-upstream = UpstreamClient()
+http = HttpClient()

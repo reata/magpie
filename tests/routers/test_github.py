@@ -129,8 +129,7 @@ def test_starhistory_returns_empty_list_for_a_repo_without_stars(client, monkeyp
 def test_starhistory_keeps_days_without_stars(client, monkeypatch):
     """Days nobody starred are emitted with zero stars and the cumulative count
     carried forward, so the chart's x axis stays continuous. The timestamps are
-    deliberately out of order: the range comes from min/max, not from the order
-    GitHub returned the pages in."""
+    deliberately out of order: the range is min/max over all of them."""
     _pin_today(monkeypatch, "2026-08-05")
     _stub_github(
         monkeypatch,
@@ -155,8 +154,8 @@ def test_starhistory_keeps_days_without_stars(client, monkeypatch):
 
 
 def test_starhistory_extends_a_flat_tail_through_today(client, monkeypatch):
-    """A repository that went quiet still shows a flat line up to today rather
-    than a series that stops at its last star."""
+    """A repository that went quiet still shows a flat line up to today, its quiet
+    days carrying the previous cumulative count."""
     _pin_today(monkeypatch, "2026-08-04")
     _stub_github(monkeypatch, [[{"starred_at": "2026-08-01T10:00:00Z"}]])
 
@@ -179,7 +178,7 @@ def test_starhistory_survives_a_star_ahead_of_our_clock(client, monkeypatch):
     ]
 
 
-def test_starhistory_maps_upstream_errors_to_503_without_caching(client, monkeypatch):
+def test_starhistory_maps_remote_errors_to_503_without_caching(client, monkeypatch):
     _pin_today(monkeypatch, "2026-08-01")
     remaining = iter(
         [

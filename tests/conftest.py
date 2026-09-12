@@ -4,7 +4,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 import magpie.main as main
-from magpie.routers import github, pypistats
+from magpie.routers import downloads, pypistats
+from magpie.services import clickpy, starhistory
+
+# The startup prewarm would race the per-test fakes; the cache is exercised
+# directly in the tests instead.
+downloads.PREWARM_ENABLED = False
 
 
 @pytest.fixture(scope="session")
@@ -23,9 +28,13 @@ def client():
 
 @pytest.fixture(autouse=True)
 def clear_caches():
-    """Keep the process-wide caches from leaking between tests."""
-    pypistats.pypistats.cache_clear()
-    github.starhistory.cache_clear()
+    """Keep the process-wide caches from leaking between tests.
+
+    The services own the caches, except for the pypistats proxy, which has no
+    service layer to put one in.
+    """
+    for cache in (clickpy.fetch, starhistory.star_history, pypistats.pypistats):
+        cache.cache_clear()
     yield
-    pypistats.pypistats.cache_clear()
-    github.starhistory.cache_clear()
+    for cache in (clickpy.fetch, starhistory.star_history, pypistats.pypistats):
+        cache.cache_clear()
