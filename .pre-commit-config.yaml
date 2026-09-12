@@ -1,12 +1,31 @@
+# Local hooks: each one runs the project's own toolchain through `uv`, so the
+# versions come from uv.lock and the pinned --ty-version instead of a second set
+# pinned by pre-commit mirrors. The commands match .github/workflows/ci.yml, so
+# `pre-commit run --all-files` is a faithful pre-flight check.
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.3
+  - repo: local
     hooks:
       - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check
         args: [--fix]
-      - id: ruff-format
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
 
-  - repo: https://github.com/astral-sh/ty-pre-commit
-    rev: v0.0.74
-    hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
       - id: ty
+        name: ty
+        # ty checks the project as a whole, so no filenames are passed: this is
+        # the command CI runs, verbatim.
+        entry: uv check --preview-features=check-command --ty-version=0.0.74
+        language: system
+        pass_filenames: false
+        types_or: [python, pyi]
+        require_serial: true
