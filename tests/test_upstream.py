@@ -54,57 +54,40 @@ def test_returns_non_retryable_response_immediately(monkeypatch):
     assert len(urls) == 1
 
 
-def test_retries_rate_limit_then_succeeds(monkeypatch):
+def test_retries_server_error_then_succeeds(monkeypatch):
     response, delays, urls = _run(
         monkeypatch,
         [
-            httpx.Response(429, headers={"Retry-After": "2"}),
+            httpx.Response(503),
             httpx.Response(200, content=b'{"ok": true}'),
         ],
     )
 
     assert response.status_code == 200
-    assert delays == [2.0]  # Retry-After is honoured over the jittered backoff
     assert len(urls) == 2
-
-
-def test_retry_after_is_capped(monkeypatch):
-    _, delays, _ = _run(
-        monkeypatch,
-        [
-            httpx.Response(429, headers={"Retry-After": "600"}),
-            httpx.Response(200),
-        ],
-    )
-
     assert len(delays) == 1
-    assert delays[0] <= 5.0
+    assert 0 <= delays[0] <= 0.5  # full-jitter backoff for attempt 0
 
 
-def test_retry_after_accepts_http_date(monkeypatch):
-    _, delays, _ = _run(
-        monkeypatch,
-        [
-            httpx.Response(
-                429,
-                headers={"Retry-After": "Wed, 21 Oct 2099 07:28:00 GMT"},
-            ),
-            httpx.Response(200),
-        ],
-    )
+def test_429_is_not_retried(monkeypatch):
+    """pypistats counts every attempt against "30 per minute", so retrying a
+    429 cannot succeed and only spends more quota."""
+    response, delays, urls = _run(monkeypatch, [httpx.Response(429)])
 
-    assert len(delays) == 1
-    assert delays[0] <= 5.0
+    assert response.status_code == 429
+    assert len(urls) == 1
+    assert delays == []
 
 
 def test_gives_up_after_max_attempts(monkeypatch):
-    response, delays, urls = _run(monkeypatch, [httpx.Response(429)] * MAX_ATTEMPTS)
+    response, delays, urls = _run(monkeypatch, [httpx.Response(500)] * MAX_ATTEMPTS)
 
     assert isinstance(response, UpstreamError)
-    assert "HTTP 429" in str(response)
+    assert "HTTP 500" in str(response)
     assert len(urls) == MAX_ATTEMPTS
     assert len(delays) == MAX_ATTEMPTS - 1
-    assert all(delay <= 5.0 for delay in delays)
+    assert delays[0] <= 0.5
+    assert delays[1] <= 1.0
 
 
 def test_retries_transport_errors(monkeypatch):
@@ -126,17 +109,20 @@ def test_transport_error_after_max_attempts_raises(monkeypatch):
     assert isinstance(response, UpstreamError)
 
 
-def test_retry_after_with_invalid_value_falls_back_to_jitter(monkeypatch):
-    _, delays, _ = _run(
+def test_cause_reflects_only_the_final_attempt(monkeypatch):
+    """A stale transport error must not be chained onto a later HTTP failure."""
+    response, _, _ = _run(
         monkeypatch,
         [
-            httpx.Response(429, headers={"Retry-After": "not-a-date"}),
-            httpx.Response(200),
+            httpx.ConnectError("connection refused"),
+            httpx.Response(500),
+            httpx.Response(500),
         ],
     )
 
-    assert len(delays) == 1
-    assert 0 <= delays[0] <= 5.0
+    assert isinstance(response, UpstreamError)
+    assert "HTTP 500" in str(response)
+    assert response.__cause__ is None
 
 
 def test_unknown_type_error_is_not_swallowed(monkeypatch):
