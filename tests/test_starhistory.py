@@ -10,13 +10,17 @@ import httpx
 
 
 class _FakeResponse:
-    """Minimal ``httpx.Response`` stand-in exposing ``status_code``/``json()``."""
+    """Minimal ``httpx.Response`` stand-in exposing only what the view reads."""
 
-    status_code = 200
     headers: dict[str, str] = {}
 
-    def __init__(self, payload):
+    def __init__(self, payload, status_code=200):
         self._payload = payload
+        self.status_code = status_code
+
+    @property
+    def is_success(self):
+        return 200 <= self.status_code < 300
 
     def json(self):
         return self._payload
@@ -97,3 +101,35 @@ def test_starhistory_reuses_cached_aggregation(client, monkeypatch):
     assert first.status_code == second.status_code == 200
     assert first.json() == second.json()
     assert len(captured_urls) == 1
+
+
+def test_starhistory_returns_empty_list_for_a_repo_without_stars(client, monkeypatch):
+    _stub_github(monkeypatch, [[]])
+
+    response = client.get("/api/starhistory/reata/brand-new")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/json"
+    assert response.json() == []
+
+
+def test_starhistory_maps_upstream_errors_to_503_without_caching(client, monkeypatch):
+    remaining = iter(
+        [
+            _FakeResponse({"message": "Not Found"}, status_code=404),
+            _FakeResponse([{"starred_at": "2026-08-01T10:00:00Z"}]),
+        ]
+    )
+
+    async def fake_get(self, url, headers=None):
+        return next(remaining)
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    first = client.get("/api/starhistory/reata/nope")
+    second = client.get("/api/starhistory/reata/nope")
+
+    assert first.status_code == 503
+    assert "404" in first.json()["detail"]
+    assert second.status_code == 200  # the error was never stored
+    assert second.json() == [{"date": "2026-08-01", "star_cnt": 1, "star_cum_cnt": 1}]

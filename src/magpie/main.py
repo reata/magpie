@@ -106,11 +106,17 @@ async def starhistory(repo: str):
                 "Authorization": f"token {GITHUB_ACCESS_TOKEN}",
             },
         )
+        if not proxy.is_success:
+            raise UpstreamError(f"github returned HTTP {proxy.status_code}")
         ts = [stargazer["starred_at"] for stargazer in proxy.json()]
         star_ts.extend(ts)
         page += 1
         if len(ts) < per_page:
             break
+    if not star_ts:
+        # A repository with no stargazers: nothing to aggregate, and the date
+        # range below needs at least one date to anchor on.
+        return Response(content=b"[]", media_type="application/json")
     star_dt = [datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").date() for ts in star_ts]
     all_dt = list(
         dt.date() for dt in rrule(DAILY, dtstart=star_dt[0], until=star_dt[-1])
