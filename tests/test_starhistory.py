@@ -10,9 +10,7 @@ import httpx
 
 
 class _FakeResponse:
-    """Minimal ``httpx.Response`` stand-in exposing only what the view reads."""
-
-    headers: dict[str, str] = {}
+    """Minimal ``httpx.Response`` stand-in exposing what the code under test reads."""
 
     def __init__(self, payload, status_code=200):
         self._payload = payload

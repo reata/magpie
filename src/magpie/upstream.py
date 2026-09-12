@@ -1,8 +1,8 @@
-"""Shared HTTP client for upstream APIs, with retry handling.
+"""Shared HTTP client for upstream APIs.
 
-Public APIs such as pypistats.org and GitHub rate limit by IP, so transient
-server errors are retried with jittered backoff and connections are pooled
-instead of opening a fresh client per request.
+One pooled ``httpx.AsyncClient`` is reused across requests, and transient server
+errors -- 5xx and transport failures -- are retried with jittered backoff. Rate
+limits are deliberately not retried; see ``RETRYABLE_STATUS``.
 """
 
 import asyncio
@@ -25,7 +25,11 @@ MAX_CONCURRENCY = 4
 
 
 class UpstreamError(RuntimeError):
-    """Raised when an upstream API still fails after every retry."""
+    """Raised when an upstream call cannot be served to the client.
+
+    Either the request kept failing after every retry, or the response carried a
+    status the caller refuses to forward.
+    """
 
 
 def _backoff(attempt: int) -> float:
@@ -37,7 +41,7 @@ def _backoff(attempt: int) -> float:
 
 
 class UpstreamClient:
-    """Async HTTP client that retries transient errors and rate limits."""
+    """Async HTTP client that pools connections and retries transient errors."""
 
     def __init__(
         self,

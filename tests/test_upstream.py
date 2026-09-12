@@ -8,7 +8,7 @@ import pytest
 from magpie.upstream import MAX_ATTEMPTS, UpstreamClient, UpstreamError
 
 
-def _run(monkeypatch, responses, *, headers=None):
+def _run(monkeypatch, responses):
     """Drive ``UpstreamClient.get`` with stubbed responses.
 
     Returns ``(response_or_error, retry_delays, requested_urls)``.
@@ -35,7 +35,7 @@ def _run(monkeypatch, responses, *, headers=None):
     async def main():
         client = UpstreamClient(sleep=fake_sleep)
         try:
-            return await client.get("https://pypistats.org/api/x", headers=headers)
+            return await client.get("https://pypistats.org/api/x")
         finally:
             await client.aclose()
 

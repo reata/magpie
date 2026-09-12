@@ -20,7 +20,7 @@ from magpie.upstream import UpstreamClient, UpstreamError
 
 logger = logging.getLogger(__name__)
 
-#: Shared, connection-pooling client that retries 429/5xx with backoff.
+#: Shared, connection-pooling client that retries transient 5xx with backoff.
 upstream = UpstreamClient()
 
 
