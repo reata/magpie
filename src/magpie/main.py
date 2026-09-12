@@ -5,8 +5,9 @@ lives in ``magpie.clients``; this module only puts them together plus the
 startup/shutdown hooks.
 """
 
+import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import cast
 
 import uvicorn
@@ -17,16 +18,26 @@ from fastapi.responses import JSONResponse
 from sqllineage.drawing import app as sqllineage_app
 from starlette.types import ASGIApp
 
-from magpie.clients.upstream import UpstreamError, upstream
-from magpie.routers import github, pypistats
+from magpie.clients import clickhouse
+from magpie.clients.http import http
+from magpie.errors import RemoteError
+from magpie.routers import downloads, github, pypistats
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    task = (
+        asyncio.create_task(downloads.prewarm()) if downloads.PREWARM_ENABLED else None
+    )
     yield
-    await upstream.aclose()
+    if task is not None:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+    await http.aclose()
+    await clickhouse.aclose()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -41,6 +52,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(downloads.router)
 app.include_router(github.router)
 app.include_router(pypistats.router)
 
@@ -56,16 +68,16 @@ async def root():
     return {"message": "Hello World from magpie"}
 
 
-@app.exception_handler(UpstreamError)
-async def upstream_error(request: Request, exc: UpstreamError) -> JSONResponse:
-    """Turn a failed upstream call into a 503 for the client.
+@app.exception_handler(RemoteError)
+async def remote_error(request: Request, exc: RemoteError) -> JSONResponse:
+    """Turn a failed remote call into a 503 for the client.
 
     Views raise instead of returning an error ``Response``: anything a cached
     view *returns* is stored as a successful result for the whole TTL, so one
     429 -- or the plain-text "404" pypistats serves -- would pin the endpoint to
     that error for hours. Raising keeps every failure out of the cache.
     """
-    logger.warning("upstream call failed: %s", exc)
+    logger.warning("remote call failed: %s", exc)
     return JSONResponse({"detail": str(exc)}, status_code=503)
 
 

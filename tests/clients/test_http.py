@@ -1,15 +1,16 @@
-"""Unit tests for the shared upstream HTTP client's retry behaviour."""
+"""Unit tests for the shared HTTP client's retry behaviour."""
 
 import asyncio
 
 import httpx
 import pytest
 
-from magpie.clients.upstream import MAX_ATTEMPTS, UpstreamClient, UpstreamError
+from magpie.clients.http import MAX_ATTEMPTS, HttpClient
+from magpie.errors import RemoteError
 
 
 def _run(monkeypatch, responses):
-    """Drive ``UpstreamClient.get`` with stubbed responses.
+    """Drive ``HttpClient.get`` with stubbed responses.
 
     Returns ``(response_or_error, retry_delays, requested_urls)``.
     """
@@ -33,7 +34,7 @@ def _run(monkeypatch, responses):
     monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
 
     async def main():
-        client = UpstreamClient(sleep=fake_sleep)
+        client = HttpClient(sleep=fake_sleep)
         try:
             return await client.get("https://pypistats.org/api/x")
         finally:
@@ -41,7 +42,7 @@ def _run(monkeypatch, responses):
 
     try:
         result = asyncio.run(main())
-    except UpstreamError as exc:
+    except RemoteError as exc:
         result = exc
     return result, delays, urls
 
@@ -82,7 +83,7 @@ def test_429_is_not_retried(monkeypatch):
 def test_gives_up_after_max_attempts(monkeypatch):
     response, delays, urls = _run(monkeypatch, [httpx.Response(500)] * MAX_ATTEMPTS)
 
-    assert isinstance(response, UpstreamError)
+    assert isinstance(response, RemoteError)
     assert "HTTP 500" in str(response)
     assert len(urls) == MAX_ATTEMPTS
     assert len(delays) == MAX_ATTEMPTS - 1
@@ -106,7 +107,7 @@ def test_retries_transport_errors(monkeypatch):
 def test_transport_error_after_max_attempts_raises(monkeypatch):
     response, _, _ = _run(monkeypatch, [httpx.ConnectError("boom")] * MAX_ATTEMPTS)
 
-    assert isinstance(response, UpstreamError)
+    assert isinstance(response, RemoteError)
 
 
 def test_cause_reflects_only_the_final_attempt(monkeypatch):
@@ -120,7 +121,7 @@ def test_cause_reflects_only_the_final_attempt(monkeypatch):
         ],
     )
 
-    assert isinstance(response, UpstreamError)
+    assert isinstance(response, RemoteError)
     assert "HTTP 500" in str(response)
     assert response.__cause__ is None
 
@@ -135,7 +136,7 @@ def test_unknown_type_error_is_not_swallowed(monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
 
     async def main():
-        client = UpstreamClient(sleep=fake_sleep)
+        client = HttpClient(sleep=fake_sleep)
         try:
             return await client.get("https://pypistats.org/api/x")
         finally:

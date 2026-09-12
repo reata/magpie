@@ -8,7 +8,11 @@ daily series, so both the pagination and the date-series construction live here
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 
-from magpie.clients.upstream import UpstreamError, upstream
+from async_lru import alru_cache
+
+from magpie.clients.http import http
+from magpie.errors import RemoteError
+from magpie.services import CACHE_TTL
 from magpie.settings import GITHUB_ACCESS_TOKEN
 
 PER_PAGE = 100
@@ -19,6 +23,7 @@ def _today() -> date:
     return datetime.now(timezone.utc).date()
 
 
+@alru_cache(maxsize=64, ttl=CACHE_TTL)
 async def star_history(repo: str) -> list[dict]:
     """Cumulative daily star counts, oldest first.
 
@@ -27,7 +32,8 @@ async def star_history(repo: str) -> list[dict]:
     count, and the tail stays flat instead of stopping at the last star.
 
     An empty list for a repository without stars: there is nothing to aggregate
-    and no date for the series to start from.
+    and no date for the series to start from. Paging through every stargazer is the
+    expensive part, so the result is cached here.
     """
     starred_at = await _stargazer_timestamps(repo)
     if not starred_at:
@@ -57,7 +63,7 @@ async def _stargazer_timestamps(repo: str) -> list[str]:
     page = 1
     starred_at: list[str] = []
     while True:
-        proxy = await upstream.get(
+        proxy = await http.get(
             f"https://api.github.com/repos/{repo}/stargazers"
             f"?per_page={PER_PAGE}&page={page}",
             headers={
@@ -66,7 +72,7 @@ async def _stargazer_timestamps(repo: str) -> list[str]:
             },
         )
         if not proxy.is_success:
-            raise UpstreamError(f"github returned HTTP {proxy.status_code}")
+            raise RemoteError(f"github returned HTTP {proxy.status_code}")
         timestamps = [stargazer["starred_at"] for stargazer in proxy.json()]
         starred_at.extend(timestamps)
         page += 1
