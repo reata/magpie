@@ -51,14 +51,15 @@ async def root():
 
 
 @app.exception_handler(UpstreamError)
-async def upstream_unavailable(request: Request, exc: UpstreamError) -> JSONResponse:
-    """Render an unreachable upstream as a retryable 503.
+async def upstream_error(request: Request, exc: UpstreamError) -> JSONResponse:
+    """Turn a failed upstream call into a 503 for the client.
 
-    This lives outside the cached views on purpose: a 503 *returned* by a cached
-    view would be stored as a successful result for the whole TTL, so a single
-    transient 429 would pin the endpoint to 503 for hours.
+    Views raise instead of returning an error ``Response``: anything a cached
+    view *returns* is stored as a successful result for the whole TTL, so one
+    429 -- or the plain-text "404" pypistats serves -- would pin the endpoint to
+    that error for hours. Raising keeps every failure out of the cache.
     """
-    logger.warning("upstream unavailable: %s", exc)
+    logger.warning("upstream call failed: %s", exc)
     return JSONResponse({"detail": str(exc)}, status_code=503)
 
 
