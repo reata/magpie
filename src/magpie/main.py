@@ -66,6 +66,11 @@ async def upstream_unavailable(request: Request, exc: UpstreamError) -> JSONResp
 @alru_cache(maxsize=256, ttl=6 * 60 * 60)
 async def pypistats(pypistats_path: str):
     proxy = await upstream.get(f"https://pypistats.org/{pypistats_path}")
+    if not proxy.is_success:
+        # Only a 2xx may leave a cached view: anything else would be stored for
+        # the whole TTL. pypistats answers errors with plain text, so a 404 body
+        # would otherwise be pinned here as application/json for hours.
+        raise UpstreamError(f"pypistats returned HTTP {proxy.status_code}")
     return Response(
         content=proxy.content,
         status_code=proxy.status_code,

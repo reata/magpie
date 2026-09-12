@@ -5,6 +5,7 @@ browser requests do not reach the rate-limited upstream.
 """
 
 import httpx
+import pytest
 
 import magpie.main as main
 from magpie.upstream import UpstreamError
@@ -82,4 +83,31 @@ def test_failure_is_not_cached(client, monkeypatch):
 
     assert first.status_code == 503
     assert second.status_code == 200  # the failure was never stored
+    assert second.json() == {"data": {"last_day": 42}}
+
+
+@pytest.mark.parametrize(
+    ("status", "body"),
+    [(404, b"404"), (429, b'<a href="/api/#etiquette">429 RATE LIMIT EXCEEDED</a>')],
+)
+def test_error_response_is_neither_forwarded_nor_cached(
+    client, monkeypatch, status, body
+):
+    """pypistats answers errors with plain text; forwarding one would cache it."""
+    responses = [
+        httpx.Response(status, content=body),
+        _ok(b'{"data": {"last_day": 42}}'),
+    ]
+
+    async def fake_get(self, url, headers=None):
+        return responses.pop(0)
+
+    monkeypatch.setattr(main.UpstreamClient, "get", fake_get)
+
+    first = client.get("/api/pypistats/api/packages/sqllineage/recent")
+    second = client.get("/api/pypistats/api/packages/sqllineage/recent")
+
+    assert first.status_code == 503
+    assert str(status) in first.json()["detail"]
+    assert second.status_code == 200  # the error was never stored
     assert second.json() == {"data": {"last_day": 42}}
