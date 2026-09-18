@@ -1,8 +1,8 @@
 """``/api/clickpy`` -- download statistics straight from ClickHouse.
 
-Serves the dashboard the same JSON shapes, the same 180 day window and the same
-category names it reads from pypistats.org, without the upstream's rate limit and
-without plain-text errors to work around.
+Serves the dashboard's download charts from ClickPy's public dataset, in the JSON
+shapes, the 180 day window and the category names of the pypistats.org API (see
+https://pypistats.org/api/).
 
 The route only maps HTTP: which dimensions exist and what a missing package
 means. The queries, their cache and the warm-up live in
