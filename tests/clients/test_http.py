@@ -36,7 +36,7 @@ def _run(monkeypatch, responses):
     async def main():
         client = HttpClient(sleep=fake_sleep)
         try:
-            return await client.get("https://pypistats.org/api/x")
+            return await client.get("https://api.github.com/x")
         finally:
             await client.aclose()
 
@@ -71,8 +71,8 @@ def test_retries_server_error_then_succeeds(monkeypatch):
 
 
 def test_429_is_not_retried(monkeypatch):
-    """pypistats counts every attempt against "30 per minute", so retrying a
-    429 cannot succeed and only spends more quota."""
+    """A rate limit counts every attempt against it, so retrying a 429 cannot
+    succeed -- it only spends more of the quota."""
     response, delays, urls = _run(monkeypatch, [httpx.Response(429)])
 
     assert response.status_code == 429
@@ -138,7 +138,7 @@ def test_unknown_type_error_is_not_swallowed(monkeypatch):
     async def main():
         client = HttpClient(sleep=fake_sleep)
         try:
-            return await client.get("https://pypistats.org/api/x")
+            return await client.get("https://api.github.com/x")
         finally:
             await client.aclose()
 

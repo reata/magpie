@@ -16,9 +16,7 @@ from magpie.errors import RemoteError
 
 logger = logging.getLogger(__name__)
 
-#: Status codes worth retrying. 429 is deliberately absent: pypistats.org
-#: allows "30 per minute" and counts every attempt against that quota, so a
-#: sub-second retry cannot clear the window -- it only spends more of it.
+#: Status codes worth retrying.
 RETRYABLE_STATUS = frozenset({500, 502, 503, 504})
 
 MAX_ATTEMPTS = 3

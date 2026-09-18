@@ -21,7 +21,7 @@ from starlette.types import ASGIApp
 from magpie.clients import clickhouse
 from magpie.clients.http import http
 from magpie.errors import RemoteError
-from magpie.routers import downloads, github, pypistats
+from magpie.routers import downloads, github
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,6 @@ app.add_middleware(
 
 app.include_router(downloads.router)
 app.include_router(github.router)
-app.include_router(pypistats.router)
 
 # Mounted after the routers on purpose: Starlette matches in registration order
 # and a Mount handles everything under its prefix, so any route declared below
@@ -73,9 +72,9 @@ async def remote_error(request: Request, exc: RemoteError) -> JSONResponse:
     """Turn a failed remote call into a 503 for the client.
 
     Views raise instead of returning an error ``Response``: anything a cached
-    view *returns* is stored as a successful result for the whole TTL, so one
-    429 -- or the plain-text "404" pypistats serves -- would pin the endpoint to
-    that error for hours. Raising keeps every failure out of the cache.
+    view *returns* is stored as a successful result for the whole TTL, so a failed
+    call would pin the endpoint to its error for hours. Raising keeps every
+    failure out of the cache.
     """
     logger.warning("remote call failed: %s", exc)
     return JSONResponse({"detail": str(exc)}, status_code=503)
