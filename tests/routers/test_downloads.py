@@ -1,8 +1,7 @@
 """Tests for the ``/api/clickpy`` endpoints.
 
-The queries run against a fake ClickHouse client: what these assert is the HTTP
-side -- the response envelopes, what a missing package means, the cache, and the
-startup warm-up.
+The queries run against a fake ClickHouse client: what these assert is the HTTP side -- the response envelopes, what
+a missing package means, the cache, and the startup warm-up.
 """
 
 import datetime
@@ -67,14 +66,10 @@ def test_normalizes_the_package_before_querying(client, monkeypatch):
 
 def test_serves_each_dimension(client, monkeypatch):
     rows = [{"date": DAY, "category": "3.12", "downloads": 5}]
-    fake = FakeExecute(
-        rows, rows, [{"date": DAY, "with_mirrors": 5, "without_mirrors": 4}]
-    )
+    fake = FakeExecute(rows, rows, [{"date": DAY, "with_mirrors": 5, "without_mirrors": 4}])
     monkeypatch.setattr(clickhouse, "execute", fake)
 
-    assert client.get("/api/clickpy/pkg/python_minor").json()["type"] == (
-        "python_minor_downloads"
-    )
+    assert client.get("/api/clickpy/pkg/python_minor").json()["type"] == ("python_minor_downloads")
     assert client.get("/api/clickpy/pkg/system").json()["type"] == "system_downloads"
     assert client.get("/api/clickpy/pkg/overall").json()["type"] == "overall_downloads"
 
@@ -100,8 +95,9 @@ def test_response_is_cached_per_path(client, monkeypatch):
 
 
 def test_unknown_dimension_is_rejected_without_querying(client, monkeypatch):
-    """The path parameter is typed as the enum, so FastAPI rejects a dimension the
-    dashboard does not draw before the route body runs."""
+    """The path parameter is typed as the enum, so FastAPI rejects a dimension the dashboard does not draw before the
+    route body runs.
+    """
     fake = FakeExecute()
     monkeypatch.setattr(clickhouse, "execute", fake)
 

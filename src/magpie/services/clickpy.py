@@ -25,25 +25,20 @@ from magpie.services import CACHE_TTL
 
 logger = logging.getLogger(__name__)
 
-# pypistats retains 180 days and serves them as 181 inclusive dates ending on
-# the newest one; the same span is kept here. The dashboard labels its x axis
-# "MM-DD", which only stays unambiguous inside a single year.
+# pypistats retains 180 days and serves them as 181 inclusive dates ending on the newest one; the same span is kept
+# here. The dashboard labels its x axis "MM-DD", which only stays unambiguous inside a single year.
 WINDOW_DAYS = 180
 
-# The mirrors pypistats.org excludes from its numbers. ClickPy also sees Nexus
-# and other installers; keeping this list identical is what makes the numbers
-# line up with pypistats.org.
+# The mirrors pypistats.org excludes from its numbers. ClickPy also sees Nexus and other installers; keeping this list
+# identical is what makes the numbers line up with pypistats.org.
 MIRRORS = ("bandersnatch", "z3c.pypimirror", "artifactory", "devpi")
 _MIRRORS_SQL = "(" + ", ".join(f"'{name}'" for name in MIRRORS) + ")"
 
-# pypistats reports unknown values as the string "null" and folds every
-# operating system it does not track into "other".
+# pypistats reports unknown values as the string "null" and folds every operating system it does not track into "other".
 #
-# Note that the two category tables carry no installer dimension, so unlike
-# ``recent`` and ``overall`` these series include mirror downloads. ClickPy has
-# no (installer x python/system) aggregate, and reading the detail table would
-# hit the public instance's read quota; the difference is a fraction of a
-# percent for packages mirrors do not sync heavily.
+# Note that the two category tables carry no installer dimension, so unlike ``recent`` and ``overall`` these series
+# include mirror downloads. ClickPy has no (installer x python/system) aggregate, and reading the detail table would hit
+# the public instance's read quota; the difference is a fraction of a percent for packages mirrors do not sync heavily.
 NULL_CATEGORY = "null"
 OTHER_CATEGORY = "other"
 KNOWN_SYSTEMS = frozenset({"Linux", "Windows", "Darwin"})
@@ -100,25 +95,23 @@ ORDER BY date, category
 """
 
 
-PYTHON_MINOR_SQL = _category_sql(
-    "pypi.pypi_downloads_per_day_by_version_by_python", "python_minor"
-)
+PYTHON_MINOR_SQL = _category_sql("pypi.pypi_downloads_per_day_by_version_by_python", "python_minor")
 SYSTEM_SQL = _category_sql("pypi.pypi_downloads_per_day_by_version_by_system", "system")
 
 
 def normalize_project(name: str) -> str:
     """PEP 503 normalisation.
 
-    ClickHouse stores normalised project names: ``SQLAlchemy`` and
-    ``ruamel.yaml`` match nothing, ``sqlalchemy`` and ``ruamel-yaml`` do.
+    ClickHouse stores normalised project names: ``SQLAlchemy`` and ``ruamel.yaml`` match nothing, ``sqlalchemy`` and
+    ``ruamel-yaml`` do.
     """
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
 def shape_recent(package: str, rows: list[dict[str, Any]]) -> dict | None:
-    """Shape the one-row ``recent`` aggregate, or ``None`` for a package with no
-    download records at all -- the row is all zeros in that case, so the query
-    reports how many rows it saw to tell the two apart."""
+    """Shape the one-row ``recent`` aggregate, or ``None`` for a package with no download records at all -- the row is
+    all zeros in that case, so the query reports how many rows it saw to tell the two apart.
+    """
     if not rows or not rows[0]["rows_seen"]:
         return None
     row = rows[0]
@@ -213,15 +206,11 @@ SPECS: dict[Dimension, Spec] = {
     Dimension.OVERALL: Spec(OVERALL_SQL, shape_overall),
     Dimension.PYTHON_MINOR: Spec(
         PYTHON_MINOR_SQL,
-        lambda package, rows: shape_category(
-            package, rows, type_="python_minor_downloads", rename=_python_category
-        ),
+        lambda package, rows: shape_category(package, rows, type_="python_minor_downloads", rename=_python_category),
     ),
     Dimension.SYSTEM: Spec(
         SYSTEM_SQL,
-        lambda package, rows: shape_category(
-            package, rows, type_="system_downloads", rename=_system_category
-        ),
+        lambda package, rows: shape_category(package, rows, type_="system_downloads", rename=_system_category),
     ),
 }
 
@@ -230,9 +219,8 @@ SPECS: dict[Dimension, Spec] = {
 async def fetch(package: str, dimension: Dimension) -> dict | None:
     """Run one dimension's query, shape the rows for the API, and memoize it.
 
-    Cached because ClickPy is refreshed about once a day: how long an answer stays
-    fresh is a property of the data source. ``None`` means the package has no
-    download records at all, which the route turns into a 404.
+    Cached because ClickPy is refreshed about once a day: how long an answer stays fresh is a property of the data
+    source. ``None`` means the package has no download records at all, which the route turns into a 404.
     """
     spec = SPECS[dimension]
     rows = await clickhouse.execute(spec.sql, {"package": normalize_project(package)})
@@ -246,15 +234,12 @@ PREWARM_PACKAGE = "sqllineage"
 async def prewarm() -> None:
     """Fill the cache for every dimension of the dashboard package.
 
-    Best effort: a cold or unreachable ClickHouse must not stop the app from
-    starting, and a later request just pays for its own query instead.
+    Best effort: a cold or unreachable ClickHouse must not stop the app from starting, and a later request just pays
+    for its own query instead.
     """
     for dimension in SPECS:
         try:
-            # Keyword arguments to match the route's call: alru_cache keys
-            # positional and keyword calls separately.
+            # Keyword arguments to match the route's call: alru_cache keys positional and keyword calls separately.
             await fetch(package=PREWARM_PACKAGE, dimension=dimension)
         except Exception:  # noqa: BLE001 -- any query failure is non-fatal here
-            logger.warning(
-                "prewarm failed for %s/%s", PREWARM_PACKAGE, dimension, exc_info=True
-            )
+            logger.warning("prewarm failed for %s/%s", PREWARM_PACKAGE, dimension, exc_info=True)

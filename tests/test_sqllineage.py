@@ -70,9 +70,7 @@ def test_directory_defaults_to_sqllineage_data_root():
     assert body["id"] == str(DATA_ROOT)
     assert body["name"] == DATA_ROOT.name
     assert body["is_dir"] is True
-    assert any(
-        child["name"] == "tpcds" and child["is_dir"] for child in body["children"]
-    )
+    assert any(child["name"] == "tpcds" and child["is_dir"] for child in body["children"])
 
 
 def test_directory_lists_requested_dir_children():

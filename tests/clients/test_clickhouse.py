@@ -39,8 +39,9 @@ def test_execute_returns_named_rows(monkeypatch):
 
 
 def test_driver_failures_become_remote_errors(monkeypatch):
-    """The API turns a RemoteError into a 503, so every driver failure has to
-    reach it as one instead of leaking a driver-specific exception."""
+    """The API turns a RemoteError into a 503, so every driver failure has to reach it as one instead of leaking a
+    driver-specific exception.
+    """
     _use_client(monkeypatch, _Client(error=RuntimeError("boom")))
 
     with pytest.raises(RemoteError, match="clickhouse query failed: boom"):
