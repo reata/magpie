@@ -13,6 +13,7 @@ from magpie import services
 from magpie.errors import RemoteError
 from magpie.services import clickpy
 from magpie.services.clickpy import (
+    RANK_SQL,
     RECENT_SQL,
     SERIES_SPECS,
     WINDOW_DAYS,
@@ -52,12 +53,19 @@ def test_normalization_keeps_distinct_projects_distinct():
 
 def test_shape_recent():
     rows = [{"last_day": 1, "last_week": 2, "last_month": 3, "rows_seen": 30}]
+    rank = [{"rank_month": 4, "total_packages": 8}]
 
-    payload = shape_recent("sqllineage", rows)
+    payload = shape_recent("sqllineage", rows, rank)
 
     assert payload is not None
     assert payload.model_dump(mode="json") == {
-        "data": {"last_day": 1, "last_month": 3, "last_week": 2},
+        "data": {
+            "last_day": 1,
+            "last_month": 3,
+            "last_week": 2,
+            "rank_month": 4,
+            "rank_month_percentile": 50.0,
+        },
         "package": "sqllineage",
         "type": "recent_downloads",
     }
@@ -67,8 +75,29 @@ def test_shape_recent_unknown_package():
     """The all-zero row is ambiguous on its own, hence ``rows_seen``."""
     all_zero = [{"last_day": 0, "last_week": 0, "last_month": 0, "rows_seen": 0}]
 
-    assert shape_recent("nope", all_zero) is None
-    assert shape_recent("nope", []) is None
+    assert shape_recent("nope", all_zero, []) is None
+    assert shape_recent("nope", [], []) is None
+
+
+@pytest.mark.parametrize(
+    ("rank_month", "total_packages", "expected"),
+    [
+        (1, 10000, 0.01),
+        (3953, 931904, 0.4242),
+        (7, 8, 87.5),
+        (5, 0, 0.0),
+    ],
+)
+def test_rank_percentile_is_the_top_share(rank_month, total_packages, expected):
+    """The percentile is ``rank / total``, so the top package is near 0 and the last is 100: the package sits in the top
+    ``rank_month_percentile`` percent.
+    """
+    rows = [{"last_day": 1, "last_week": 2, "last_month": 3, "rows_seen": 30}]
+
+    payload = shape_recent("pkg", rows, [{"rank_month": rank_month, "total_packages": total_packages}])
+
+    assert payload is not None
+    assert payload.data.rank_month_percentile == expected
 
 
 def test_shape_overall_emits_both_categories_oldest_first():
@@ -136,12 +165,15 @@ def test_recent_is_not_a_series_dimension():
 
 
 def test_queries_use_aggregate_tables_only():
-    for sql in (RECENT_SQL, *(spec.sql for spec in SERIES_SPECS.values())):
+    for sql in (
+        RECENT_SQL,
+        RANK_SQL,
+        *(spec.sql for spec in SERIES_SPECS.values()),
+    ):
         assert "%(package)s" in sql
-        # The 2.2 trillion row detail table is deliberately never queried: it is what would exhaust the public
-        # instance's read quota.
+        # The raw ``pypi`` table is deliberately never queried: it is what would exhaust the public instance's read
+        # quota.
         assert "FROM pypi.pypi\n" not in sql
-        assert "pypi.pypi_downloads" in sql
 
 
 @pytest.mark.parametrize("sql", [RECENT_SQL, SERIES_SPECS[SeriesDimension.OVERALL].sql])

@@ -8,7 +8,7 @@ import datetime
 
 from magpie.clients import clickhouse
 from magpie.errors import RemoteError
-from magpie.services.clickpy import RECENT_SQL, SERIES_SPECS, SeriesDimension
+from magpie.services.clickpy import RANK_SQL, RECENT_SQL, SERIES_SPECS, SeriesDimension
 
 DAY = datetime.date(2026, 9, 11)
 
@@ -34,6 +34,24 @@ def _recent(**overrides):
     return row
 
 
+def _rank(**overrides):
+    row = {"rank_month": 4, "total_packages": 8}
+    row.update(overrides)
+    return row
+
+
+def _recent_payload(**data_overrides):
+    data = {
+        "last_day": 1,
+        "last_month": 3,
+        "last_week": 2,
+        "rank_month": 4,
+        "rank_month_percentile": 50.0,
+    }
+    data.update(data_overrides)
+    return {"data": data, "package": "sqllineage", "type": "recent_downloads"}
+
+
 def _resolve(schema, node):
     """Follow a component ``$ref`` so a test asserts the shape, not its name."""
     if "$ref" in node:
@@ -55,28 +73,47 @@ def _response_schema(schema, operation):
 
 
 def test_serves_recent_in_pypistats_shape(client, monkeypatch):
-    fake = FakeExecute([_recent()])
+    fake = FakeExecute([_recent()], [_rank()])
     monkeypatch.setattr(clickhouse, "execute", fake)
 
     response = client.get("/api/clickpy/sqllineage/recent")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "data": {"last_day": 1, "last_month": 3, "last_week": 2},
-        "package": "sqllineage",
-        "type": "recent_downloads",
-    }
+    assert response.json() == _recent_payload()
+
+
+def test_recent_ranks_the_package_after_its_totals(client, monkeypatch):
+    """The rank is a second query over the per-month table, keyed the same way."""
+    fake = FakeExecute([_recent()], [_rank(rank_month=3953, total_packages=931904)])
+    monkeypatch.setattr(clickhouse, "execute", fake)
+
+    payload = client.get("/api/clickpy/sqllineage/recent").json()
+
+    assert payload["data"]["rank_month"] == 3953
+    assert payload["data"]["rank_month_percentile"] == 0.4242
 
 
 def test_normalizes_the_package_before_querying(client, monkeypatch):
-    fake = FakeExecute([_recent()])
+    fake = FakeExecute([_recent()], [_rank()])
     monkeypatch.setattr(clickhouse, "execute", fake)
 
     client.get("/api/clickpy/SQLAlchemy/recent")
 
-    sql, parameters = fake.calls[0]
-    assert sql is RECENT_SQL
-    assert parameters == {"package": "sqlalchemy"}
+    assert fake.calls == [
+        (RECENT_SQL, {"package": "sqlalchemy"}),
+        (RANK_SQL, {"package": "sqlalchemy"}),
+    ]
+
+
+def test_unknown_package_is_not_ranked(client, monkeypatch):
+    """A package ClickPy never saw has nothing to rank, so the second query is skipped rather than run for a name that
+    does not exist.
+    """
+    fake = FakeExecute([_recent(last_day=0, last_week=0, last_month=0, rows_seen=0)])
+    monkeypatch.setattr(clickhouse, "execute", fake)
+
+    assert client.get("/api/clickpy/nope/recent").status_code == 404
+    assert [sql for sql, _ in fake.calls] == [RECENT_SQL]
 
 
 def test_serves_each_series_dimension(client, monkeypatch):
@@ -121,23 +158,15 @@ def test_each_series_path_runs_its_own_query(client, monkeypatch):
 
 
 def test_response_is_cached_per_path(client, monkeypatch):
-    """ClickPy is refreshed once a day, so one query per path per TTL is plenty."""
-    fake = FakeExecute([_recent()], [_recent(last_day=99)])
+    """ClickPy is refreshed once a day, so one pair of queries per path per TTL is plenty."""
+    fake = FakeExecute([_recent()], [_rank()], [_recent(last_day=99)], [_rank()])
     monkeypatch.setattr(clickhouse, "execute", fake)
 
     first = client.get("/api/clickpy/sqllineage/recent")
     second = client.get("/api/clickpy/sqllineage/recent")
 
-    assert len(fake.calls) == 1
-    assert (
-        first.json()
-        == second.json()
-        == {
-            "data": {"last_day": 1, "last_month": 3, "last_week": 2},
-            "package": "sqllineage",
-            "type": "recent_downloads",
-        }
-    )
+    assert len(fake.calls) == 2
+    assert first.json() == second.json() == _recent_payload()
 
 
 def test_unknown_dimension_is_rejected_without_querying(client, monkeypatch):
@@ -157,7 +186,7 @@ def test_recent_is_not_a_series_dimension(client, monkeypatch):
     """``recent`` is a separate route: it must be served by its own handler, not matched by the ``{dimension}`` route
     and rejected as an unknown series.
     """
-    fake = FakeExecute([_recent()])
+    fake = FakeExecute([_recent()], [_rank()])
     monkeypatch.setattr(clickhouse, "execute", fake)
 
     response = client.get("/api/clickpy/sqllineage/recent")
@@ -166,15 +195,8 @@ def test_recent_is_not_a_series_dimension(client, monkeypatch):
     assert fake.calls[0][0] is RECENT_SQL
 
 
-def test_unknown_package_is_404(client, monkeypatch):
-    fake = FakeExecute([_recent(last_day=0, last_week=0, last_month=0, rows_seen=0)])
-    monkeypatch.setattr(clickhouse, "execute", fake)
-
-    assert client.get("/api/clickpy/nope/recent").status_code == 404
-
-
 def test_failure_is_503_and_not_cached(client, monkeypatch):
-    fake = FakeExecute(RemoteError("clickhouse query failed: boom"), [_recent()])
+    fake = FakeExecute(RemoteError("clickhouse query failed: boom"), [_recent()], [_rank()])
     monkeypatch.setattr(clickhouse, "execute", fake)
 
     first = client.get("/api/clickpy/sqllineage/recent")
@@ -207,6 +229,23 @@ def test_openapi_gives_each_operation_its_own_response_type(client):
         "system_downloads",
     ]
     assert recent["properties"]["data"] != series["properties"]["data"]
+
+
+def test_openapi_recent_documents_the_rank_fields(client):
+    schema = client.get("/openapi.json").json()
+    recent = _response_schema(schema, schema["paths"]["/api/clickpy/{package}/recent"]["get"])
+
+    data = _resolve(schema, recent["properties"]["data"])
+
+    assert set(data["properties"]) == {
+        "last_day",
+        "last_month",
+        "last_week",
+        "rank_month",
+        "rank_month_percentile",
+    }
+    assert data["properties"]["rank_month"]["type"] == "integer"
+    assert data["properties"]["rank_month_percentile"]["type"] == "number"
 
 
 def test_openapi_series_dimension_lists_only_series(client):

@@ -9,9 +9,23 @@ serves one package's last day/week/month totals and ``fetch_series`` serves the 
 and ``system`` time series. Callers -- and the OpenAPI schema -- see a concrete type instead of JSON whose shape
 depends on a ``dimension`` parameter.
 
-Every query reads ClickPy's pre-aggregated tables instead of the 2.2 trillion row ``pypi`` table: those are ordered
-by project, so a single-package query prunes to that package's rows, which is what the public read-only instance is
-sized for.
+``fetch_recent`` also reports where the package's month sits among every package. That rank comes from the per-month
+table rather than the per-day one: the public instance stops a query at a billion rows read and returns the partial
+result, and the per-day table is already a billion rows, so only the per-month table (ordered by ``month, project``)
+can rank the whole catalogue inside that cap. Its window and ordering follow hugovk's top-pypi-packages monthly dump
+(https://hugovk.dev/top-pypi-packages/), so the two agree.
+
+Every query reads one of the pre-aggregated tables that ClickPy's materialized views maintain, never the raw
+multi-trillion row ``pypi`` table they are built from:
+
+* ``pypi_downloads_per_day_by_version_by_installer_by_type`` -- ``recent`` and
+  ``overall``, the smallest view that carries the installer dimension, which is
+  what mirror exclusion needs;
+* ``pypi_downloads_per_day_by_version_by_python`` and ``..._by_system`` -- the
+  two category series;
+* ``pypi_downloads_per_day`` -- the newest date each window anchors on;
+* ``pypi_downloads_per_month`` -- the rank, the only view ordered by time first
+  (``month, project``), so one month can be aggregated without a full scan.
 """
 
 import datetime
@@ -23,7 +37,7 @@ from enum import StrEnum
 from typing import Any, Literal
 
 from async_lru import alru_cache
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from magpie.clients import clickhouse
 from magpie.services import CACHE_TTL
@@ -71,6 +85,43 @@ WHERE project = %(package)s
   AND lower(installer) NOT IN {_MIRRORS_SQL}
 """
 
+# The package's position among every package for the last complete calendar month, plus how many packages that is, so a
+# percentile can be derived.
+#
+# The table, the window and the ordering are hugovk's ``top-pypi-packages`` monthly dump
+# (https://hugovk.dev/top-pypi-packages/), which ranks this same table on this same public instance with
+# ``ORDER BY download_count DESC, project``. Reproducing that tie-break keeps the two rankings equal for tied packages
+# as well, not just for packages with a unique total.
+#
+# Two constraints shape the query. It reads the per-month table and never the per-day one, because the per-day table is
+# a billion rows and the public instance truncates a scan that large; ``pypi_downloads_per_month`` is ordered by
+# ``(month, project)``, so a single month prunes to a couple of million rows. And a package with no downloads that month
+# is put at the bottom rather than above the whole field, which a bare ``total > 0`` count would do.
+RANK_SQL = """
+WITH (
+    SELECT toStartOfMonth(today()) - INTERVAL 1 MONTH
+) AS ranked_month,
+(
+    SELECT sum(count)
+    FROM pypi.pypi_downloads_per_month
+    WHERE month = ranked_month AND project = %(package)s
+) AS package_total
+SELECT
+    if(
+        package_total = 0,
+        count(),
+        1 + countIf(total > package_total)
+          + countIf(total = package_total AND project < %(package)s)
+    ) AS rank_month,
+    count() AS total_packages
+FROM (
+    SELECT project, sum(count) AS total
+    FROM pypi.pypi_downloads_per_month
+    WHERE month = ranked_month
+    GROUP BY project
+)
+"""
+
 OVERALL_SQL = f"""
 WITH {_ANCHOR}
 SELECT
@@ -113,18 +164,24 @@ def normalize_project(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-class RecentTotals(BaseModel):
-    """The three windows pypistats' ``recent`` reports."""
+class RecentStats(BaseModel):
+    """One package's download totals, plus where its month sits."""
 
     last_day: int
     last_month: int
     last_week: int
+    # Of the last complete calendar month, not of ``last_month``: a global rank over the rolling 30 days would have to
+    # scan the whole per-day table, which the public instance will not do (see ``RANK_SQL``).
+    rank_month: int = Field(description="Rank by downloads in the last complete calendar month.")
+    rank_month_percentile: float = Field(
+        description=("Percentage of packages ranked at or above this one; lower is better.")
+    )
 
 
 class RecentDownloads(BaseModel):
     """One package's ``recent`` download totals."""
 
-    data: RecentTotals
+    data: RecentStats
     package: str
     type: Literal["recent_downloads"]
 
@@ -145,22 +202,40 @@ class SeriesDownloads(BaseModel):
     type: Literal["overall_downloads", "python_minor_downloads", "system_downloads"]
 
 
-def shape_recent(package: str, rows: list[dict[str, Any]]) -> RecentDownloads | None:
-    """Shape the one-row ``recent`` aggregate, or ``None`` for a package with no download records at all -- the row is
-    all zeros in that case, so the query reports how many rows it saw to tell the two apart.
+def shape_recent(package: str, rows: list[dict[str, Any]], rank_rows: list[dict[str, Any]]) -> RecentDownloads | None:
+    """Shape the one-row ``recent`` aggregate and its rank row.
+
+    ``None`` for a package with no download records at all -- the aggregate row is all zeros in that case, so the
+    query reports how many rows it saw to tell the two apart. The caller skips the rank query in that case, so
+    ``rank_rows`` is only read for a package ClickPy has seen.
     """
     if not rows or not rows[0]["rows_seen"]:
         return None
     row = rows[0]
+    rank = rank_rows[0]
     return RecentDownloads(
-        data=RecentTotals(
+        data=RecentStats(
             last_day=row["last_day"],
             last_month=row["last_month"],
             last_week=row["last_week"],
+            rank_month=rank["rank_month"],
+            rank_month_percentile=_percentile(rank),
         ),
         package=package,
         type="recent_downloads",
     )
+
+
+def _percentile(rank: dict[str, Any]) -> float:
+    """The share of ranked packages at or above this one.
+
+    ``rank / total`` as a percentage, so the top package is near 0 and the last is 100: the package sits in the top
+    ``rank_month_percentile`` percent.
+    """
+    total = rank["total_packages"]
+    if not total:
+        return 0.0
+    return round(rank["rank_month"] / total * 100, 4)
 
 
 def shape_overall(package: str, rows: list[dict[str, Any]]) -> SeriesDownloads | None:
@@ -251,13 +326,18 @@ SERIES_SPECS: dict[SeriesDimension, SeriesSpec] = {
 
 @alru_cache(maxsize=256, ttl=CACHE_TTL)
 async def fetch_recent(package: str) -> RecentDownloads | None:
-    """Run the ``recent`` query, shape it for the API, and memoize it.
+    """Run the ``recent`` query and its rank, shape them, and memoize the result.
 
     Cached because ClickPy is refreshed about once a day: how long an answer stays fresh is a property of the data
     source. ``None`` means the package has no download records at all, which the route turns into a 404.
     """
-    rows = await clickhouse.execute(RECENT_SQL, {"package": normalize_project(package)})
-    return shape_recent(package, rows)
+    normalized = normalize_project(package)
+    rows = await clickhouse.execute(RECENT_SQL, {"package": normalized})
+    if not rows or not rows[0]["rows_seen"]:
+        # Nothing to rank: skip the extra query for a package ClickPy never saw.
+        return None
+    rank_rows = await clickhouse.execute(RANK_SQL, {"package": normalized})
+    return shape_recent(package, rows, rank_rows)
 
 
 @alru_cache(maxsize=256, ttl=CACHE_TTL)
