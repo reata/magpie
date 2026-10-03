@@ -13,11 +13,14 @@ from magpie import services
 from magpie.errors import RemoteError
 from magpie.services import clickpy
 from magpie.services.clickpy import (
+    DEFAULT_WINDOW,
     RANK_SQL,
     RECENT_SQL,
     SERIES_SPECS,
-    WINDOW_DAYS,
+    WINDOW_SPECS,
     SeriesDimension,
+    SeriesInterval,
+    SeriesWindow,
     normalize_project,
     shape_overall,
     shape_recent,
@@ -100,13 +103,15 @@ def test_rank_percentile_is_the_top_share(rank_month, total_packages, expected):
     assert payload.data.rank_month_percentile == expected
 
 
-def test_shape_overall_emits_both_categories_oldest_first():
+@pytest.mark.parametrize("interval", list(SeriesInterval))
+def test_shape_overall_emits_both_categories_oldest_first(interval):
     payload = shape_overall(
         "pkg",
         [
-            {"date": DAY, "with_mirrors": 10, "without_mirrors": 8},
-            {"date": DAY_AFTER, "with_mirrors": 20, "without_mirrors": 18},
+            {"bucket": DAY, "with_mirrors": 10, "without_mirrors": 8},
+            {"bucket": DAY_AFTER, "with_mirrors": 20, "without_mirrors": 18},
         ],
+        interval,
     )
 
     assert payload is not None
@@ -117,6 +122,7 @@ def test_shape_overall_emits_both_categories_oldest_first():
             {"category": "with_mirrors", "date": "2026-09-12", "downloads": 20},
             {"category": "without_mirrors", "date": "2026-09-12", "downloads": 18},
         ],
+        "interval": interval.value,
         "package": "pkg",
         "type": "overall_downloads",
     }
@@ -136,10 +142,13 @@ def test_shape_overall_emits_both_categories_oldest_first():
     ],
 )
 def test_category_mapping(dimension, raw, expected):
-    payload = SERIES_SPECS[dimension].shape("pkg", [{"date": DAY, "category": raw, "downloads": 7}])
+    payload = SERIES_SPECS[dimension].shape(
+        "pkg", [{"bucket": DAY, "category": raw, "downloads": 7}], SeriesInterval.DAY
+    )
 
     assert payload is not None
     assert payload.model_dump(mode="json")["data"] == [{"category": expected, "date": "2026-09-11", "downloads": 7}]
+    assert payload.interval is SeriesInterval.DAY
     assert payload.type == (
         "python_minor_downloads" if dimension is SeriesDimension.PYTHON_MINOR else "system_downloads"
     )
@@ -147,7 +156,7 @@ def test_category_mapping(dimension, raw, expected):
 
 @pytest.mark.parametrize("dimension", list(SeriesDimension))
 def test_empty_series_has_no_payload(dimension):
-    assert SERIES_SPECS[dimension].shape("nope", []) is None
+    assert SERIES_SPECS[dimension].shape("nope", [], SeriesInterval.DAY) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -164,26 +173,74 @@ def test_recent_is_not_a_series_dimension():
     assert "recent" not in {dimension.value for dimension in SeriesDimension}
 
 
+def _all_sql():
+    """Every query the service can run, across dimensions and windows."""
+    return [RECENT_SQL, RANK_SQL, *(sql for spec in SERIES_SPECS.values() for sql in spec.sqls.values())]
+
+
 def test_queries_use_aggregate_tables_only():
-    for sql in (
-        RECENT_SQL,
-        RANK_SQL,
-        *(spec.sql for spec in SERIES_SPECS.values()),
-    ):
+    for sql in _all_sql():
         assert "%(package)s" in sql
         # The raw ``pypi`` table is deliberately never queried: it is what would exhaust the public instance's read
         # quota.
         assert "FROM pypi.pypi\n" not in sql
 
 
-@pytest.mark.parametrize("sql", [RECENT_SQL, SERIES_SPECS[SeriesDimension.OVERALL].sql])
-def test_mirror_downloads_are_excluded_like_pypistats(sql):
-    assert "lower(installer) NOT IN ('bandersnatch', 'z3c.pypimirror', 'artifactory', 'devpi')" in sql
+def test_mirror_downloads_are_excluded_like_pypistats():
+    for sql in [RECENT_SQL, *SERIES_SPECS[SeriesDimension.OVERALL].sqls.values()]:
+        assert "lower(installer) NOT IN ('bandersnatch', 'z3c.pypimirror', 'artifactory', 'devpi')" in sql
+
+
+@pytest.mark.parametrize(
+    ("window", "days"),
+    [(window, spec.days) for window, spec in WINDOW_SPECS.items() if spec.days is not None],
+)
+def test_each_window_reaches_back_its_offset(window, days):
+    for dimension in SeriesDimension:
+        assert f"a.d - {days}" in SERIES_SPECS[dimension].sqls[window]
+
+
+def test_the_all_window_drops_the_date_filter():
+    """``all`` has nothing to window against, so its query reads the package's rows with no anchor at all."""
+    for dimension in SeriesDimension:
+        sql = SERIES_SPECS[dimension].sqls[SeriesWindow.ALL]
+        assert "date >=" not in sql
+        assert "anchor" not in sql
+
+
+@pytest.mark.parametrize(
+    ("interval", "bucket"),
+    [
+        (SeriesInterval.DAY, "date AS bucket"),
+        (SeriesInterval.WEEK, "toStartOfWeek(date) AS bucket"),
+    ],
+)
+def test_each_interval_has_its_bucket(interval, bucket):
+    """A point per day for 3 years is more rows than the public instance returns, and more than a chart can draw."""
+    for window, spec in WINDOW_SPECS.items():
+        if spec.interval is not interval:
+            continue
+        for dimension in SeriesDimension:
+            assert bucket in SERIES_SPECS[dimension].sqls[window]
+
+
+def test_the_long_windows_are_the_weekly_ones():
+    assert {window for window, spec in WINDOW_SPECS.items() if spec.interval is SeriesInterval.WEEK} == {
+        SeriesWindow.YEARS_3,
+        SeriesWindow.ALL,
+    }
 
 
 @pytest.mark.parametrize("dimension", list(SeriesDimension))
-def test_series_are_windowed(dimension):
-    assert f"a.d - {WINDOW_DAYS}" in SERIES_SPECS[dimension].sql
+def test_every_series_covers_every_window(dimension):
+    assert set(SERIES_SPECS[dimension].sqls) == set(SeriesWindow)
+
+
+def test_the_default_window_is_180_days():
+    """The span the dashboard opened with, kept so a client that sends no window gets the same chart."""
+    assert DEFAULT_WINDOW is SeriesWindow.DAYS_180
+    assert WINDOW_SPECS[DEFAULT_WINDOW].days == 180
+    assert WINDOW_SPECS[DEFAULT_WINDOW].interval is SeriesInterval.DAY
 
 
 # --------------------------------------------------------------------------- #
@@ -198,8 +255,8 @@ def test_prewarm_queries_recent_and_every_series(monkeypatch):
     async def fake_recent(*, package):
         calls.append(("recent", package))
 
-    async def fake_series(*, package, dimension):
-        calls.append((dimension, package))
+    async def fake_series(*, package, dimension, window):
+        calls.append((dimension, window, package))
 
     monkeypatch.setattr(clickpy, "fetch_recent", fake_recent)
     monkeypatch.setattr(clickpy, "fetch_series", fake_series)
@@ -208,7 +265,7 @@ def test_prewarm_queries_recent_and_every_series(monkeypatch):
 
     assert calls == [
         ("recent", clickpy.PREWARM_PACKAGE),
-        *((dimension, clickpy.PREWARM_PACKAGE) for dimension in SERIES_SPECS),
+        *((dimension, clickpy.DEFAULT_WINDOW, clickpy.PREWARM_PACKAGE) for dimension in SERIES_SPECS),
     ]
 
 
@@ -219,7 +276,7 @@ def test_prewarm_survives_a_failing_series(monkeypatch):
     async def fake_recent(*, package):
         calls.append("recent")
 
-    async def flaky_series(*, package, dimension):
+    async def flaky_series(*, package, dimension, window):
         calls.append(dimension)
         if dimension is SeriesDimension.OVERALL:
             raise RemoteError("clickhouse query failed: boom")

@@ -8,7 +8,14 @@ import datetime
 
 from magpie.clients import clickhouse
 from magpie.errors import RemoteError
-from magpie.services.clickpy import RANK_SQL, RECENT_SQL, SERIES_SPECS, SeriesDimension
+from magpie.services.clickpy import (
+    DEFAULT_WINDOW,
+    RANK_SQL,
+    RECENT_SQL,
+    SERIES_SPECS,
+    SeriesDimension,
+    SeriesWindow,
+)
 
 DAY = datetime.date(2026, 9, 11)
 
@@ -117,8 +124,8 @@ def test_unknown_package_is_not_ranked(client, monkeypatch):
 
 
 def test_serves_each_series_dimension(client, monkeypatch):
-    rows = [{"date": DAY, "category": "3.12", "downloads": 5}]
-    fake = FakeExecute(rows, rows, [{"date": DAY, "with_mirrors": 5, "without_mirrors": 4}])
+    rows = [{"bucket": DAY, "category": "3.12", "downloads": 5}]
+    fake = FakeExecute(rows, rows, [{"bucket": DAY, "with_mirrors": 5, "without_mirrors": 4}])
     monkeypatch.setattr(clickhouse, "execute", fake)
 
     assert client.get("/api/clickpy/pkg/python_minor").json()["type"] == ("python_minor_downloads")
@@ -130,20 +137,33 @@ def test_series_is_served_in_pypistats_shape(client, monkeypatch):
     """The date is the model's ``datetime.date``, so the wire format depends on its JSON encoding staying the ISO string
     pypistats uses.
     """
-    rows = [{"date": DAY, "category": "3.12", "downloads": 5}]
+    rows = [{"bucket": DAY, "category": "3.12", "downloads": 5}]
     fake = FakeExecute(rows)
     monkeypatch.setattr(clickhouse, "execute", fake)
 
     assert client.get("/api/clickpy/pkg/python_minor").json() == {
         "data": [{"category": "3.12", "date": "2026-09-11", "downloads": 5}],
+        "interval": "day",
         "package": "pkg",
         "type": "python_minor_downloads",
     }
 
 
+def test_long_window_reports_the_weekly_interval(client, monkeypatch):
+    """A long window's ``date`` is a week start, so the response says which interval it used."""
+    rows = [{"bucket": DAY, "category": "3.12", "downloads": 5}]
+    fake = FakeExecute(rows)
+    monkeypatch.setattr(clickhouse, "execute", fake)
+
+    payload = client.get("/api/clickpy/pkg/python_minor?window=all").json()
+
+    assert payload["interval"] == "week"
+    assert fake.calls[0][0] == SERIES_SPECS[SeriesDimension.PYTHON_MINOR].sqls[SeriesWindow.ALL]
+
+
 def test_each_series_path_runs_its_own_query(client, monkeypatch):
-    rows = [{"date": DAY, "category": "3.12", "downloads": 5}]
-    fake = FakeExecute(rows, rows, [{"date": DAY, "with_mirrors": 5, "without_mirrors": 4}])
+    rows = [{"bucket": DAY, "category": "3.12", "downloads": 5}]
+    fake = FakeExecute(rows, rows, [{"bucket": DAY, "with_mirrors": 5, "without_mirrors": 4}])
     monkeypatch.setattr(clickhouse, "execute", fake)
 
     client.get("/api/clickpy/pkg/python_minor")
@@ -151,10 +171,47 @@ def test_each_series_path_runs_its_own_query(client, monkeypatch):
     client.get("/api/clickpy/pkg/overall")
 
     assert [sql for sql, _ in fake.calls] == [
-        SERIES_SPECS[SeriesDimension.PYTHON_MINOR].sql,
-        SERIES_SPECS[SeriesDimension.SYSTEM].sql,
-        SERIES_SPECS[SeriesDimension.OVERALL].sql,
+        SERIES_SPECS[SeriesDimension.PYTHON_MINOR].sqls[DEFAULT_WINDOW],
+        SERIES_SPECS[SeriesDimension.SYSTEM].sqls[DEFAULT_WINDOW],
+        SERIES_SPECS[SeriesDimension.OVERALL].sqls[DEFAULT_WINDOW],
     ]
+
+
+def test_window_query_param_selects_the_query(client, monkeypatch):
+    """``window`` reaches the service, which then runs that window's SQL rather than the default one."""
+    rows = [{"bucket": DAY, "category": "3.12", "downloads": 5}]
+    fake = FakeExecute(rows)
+    monkeypatch.setattr(clickhouse, "execute", fake)
+
+    response = client.get("/api/clickpy/pkg/python_minor?window=1y")
+
+    assert response.status_code == 200
+    assert [sql for sql, _ in fake.calls] == [SERIES_SPECS[SeriesDimension.PYTHON_MINOR].sqls[SeriesWindow.YEAR_1]]
+
+
+def test_unknown_window_is_rejected_without_querying(client, monkeypatch):
+    """``window`` is typed as the enum, so FastAPI rejects a window the dashboard does not offer."""
+    fake = FakeExecute()
+    monkeypatch.setattr(clickhouse, "execute", fake)
+
+    response = client.get("/api/clickpy/pkg/overall?window=10y")
+
+    assert response.status_code == 422
+    assert fake.calls == []
+
+
+def test_response_is_cached_per_window(client, monkeypatch):
+    """Each window is its own cache entry, so switching back and forth only queries once each."""
+    rows = [{"bucket": DAY, "category": "3.12", "downloads": 5}]
+    fake = FakeExecute(rows, rows)
+    monkeypatch.setattr(clickhouse, "execute", fake)
+
+    client.get("/api/clickpy/pkg/python_minor")
+    client.get("/api/clickpy/pkg/python_minor?window=1y")
+    client.get("/api/clickpy/pkg/python_minor")
+    client.get("/api/clickpy/pkg/python_minor?window=1y")
+
+    assert len(fake.calls) == 2
 
 
 def test_response_is_cached_per_path(client, monkeypatch):
@@ -259,3 +316,23 @@ def test_openapi_series_dimension_lists_only_series(client):
         "python_minor",
         "system",
     ]
+
+
+def test_openapi_series_documents_the_windows(client):
+    schema = client.get("/openapi.json").json()
+    series = schema["paths"]["/api/clickpy/{package}/{dimension}"]["get"]
+
+    window = next(parameter for parameter in series["parameters"] if parameter["name"] == "window")
+
+    assert _resolve(schema, window["schema"])["enum"] == ["180d", "1y", "3y", "all"]
+    assert window["required"] is False
+
+
+def test_openapi_series_documents_the_interval(client):
+    """A client cannot infer day-vs-week granularity from the request alone once windows change, so it is documented."""
+    schema = client.get("/openapi.json").json()
+    series = _response_schema(schema, schema["paths"]["/api/clickpy/{package}/{dimension}"]["get"])
+
+    interval = _resolve(schema, series["properties"]["interval"])
+
+    assert interval["enum"] == ["day", "week"]
