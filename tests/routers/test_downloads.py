@@ -12,7 +12,7 @@ from magpie.clients import clickhouse
 from magpie.errors import RemoteError
 from magpie.routers import downloads as downloads_router
 from magpie.services import clickpy
-from magpie.services.clickpy import SPECS
+from magpie.services.clickpy import SPECS, Dimension
 
 DAY = datetime.date(2026, 9, 11)
 
@@ -64,7 +64,7 @@ def test_normalizes_the_package_before_querying(client, monkeypatch):
     client.get("/api/clickpy/SQLAlchemy/recent")
 
     sql, parameters = fake.calls[0]
-    assert sql is SPECS["recent"].sql
+    assert sql is SPECS[Dimension.RECENT].sql
     assert parameters == {"package": "sqlalchemy"}
 
 
@@ -102,13 +102,15 @@ def test_response_is_cached_per_path(client, monkeypatch):
     )
 
 
-def test_unsupported_dimension_is_404_without_querying(client, monkeypatch):
+def test_unknown_dimension_is_rejected_without_querying(client, monkeypatch):
+    """The path parameter is typed as the enum, so FastAPI rejects a dimension the
+    dashboard does not draw before the route body runs."""
     fake = FakeExecute()
     monkeypatch.setattr(clickhouse, "execute", fake)
 
     response = client.get("/api/clickpy/sqllineage/python_major")
 
-    assert response.status_code == 404
+    assert response.status_code == 422
     assert fake.calls == []
 
 

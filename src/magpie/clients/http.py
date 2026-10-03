@@ -16,7 +16,7 @@ from magpie.errors import RemoteError
 
 logger = logging.getLogger(__name__)
 
-#: Status codes worth retrying.
+# Status codes worth retrying.
 RETRYABLE_STATUS = frozenset({500, 502, 503, 504})
 
 MAX_ATTEMPTS = 3
@@ -107,6 +107,6 @@ class HttpClient:
         raise last_error
 
 
-#: The one client every outbound HTTP call shares: one connection pool for the
-#: whole process, closed by the application lifespan.
+# The one client every outbound HTTP call shares: one connection pool for the
+# whole process, closed by the application lifespan.
 http = HttpClient()

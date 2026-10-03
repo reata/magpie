@@ -14,6 +14,7 @@ that package's rows, which is what the public read-only instance is sized for.
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any
 
 from async_lru import alru_cache
@@ -21,31 +22,31 @@ from async_lru import alru_cache
 from magpie.clients import clickhouse
 from magpie.services import CACHE_TTL
 
-#: pypistats retains 180 days and serves them as 181 inclusive dates ending on
-#: the newest one; the same span is kept here. The dashboard labels its x axis
-#: "MM-DD", which only stays unambiguous inside a single year.
+# pypistats retains 180 days and serves them as 181 inclusive dates ending on
+# the newest one; the same span is kept here. The dashboard labels its x axis
+# "MM-DD", which only stays unambiguous inside a single year.
 WINDOW_DAYS = 180
 
-#: The mirrors pypistats.org excludes from its numbers. ClickPy also sees Nexus
-#: and other installers; keeping this list identical is what makes the numbers
-#: line up with pypistats.org.
+# The mirrors pypistats.org excludes from its numbers. ClickPy also sees Nexus
+# and other installers; keeping this list identical is what makes the numbers
+# line up with pypistats.org.
 MIRRORS = ("bandersnatch", "z3c.pypimirror", "artifactory", "devpi")
 _MIRRORS_SQL = "(" + ", ".join(f"'{name}'" for name in MIRRORS) + ")"
 
-#: pypistats reports unknown values as the string "null" and folds every
-#: operating system it does not track into "other".
-#:
-#: Note that the two category tables carry no installer dimension, so unlike
-#: ``recent`` and ``overall`` these series include mirror downloads. ClickPy has
-#: no (installer x python/system) aggregate, and reading the detail table would
-#: hit the public instance's read quota; the difference is a fraction of a
-#: percent for packages mirrors do not sync heavily.
+# pypistats reports unknown values as the string "null" and folds every
+# operating system it does not track into "other".
+#
+# Note that the two category tables carry no installer dimension, so unlike
+# ``recent`` and ``overall`` these series include mirror downloads. ClickPy has
+# no (installer x python/system) aggregate, and reading the detail table would
+# hit the public instance's read quota; the difference is a fraction of a
+# percent for packages mirrors do not sync heavily.
 NULL_CATEGORY = "null"
 OTHER_CATEGORY = "other"
 KNOWN_SYSTEMS = frozenset({"Linux", "Windows", "Darwin"})
 
-#: The window is anchored on the newest date the dataset has rather than on
-#: ``today()``: ClickPy is updated once a day, so the two can differ.
+# The window is anchored on the newest date the dataset has rather than on
+# ``today()``: ClickPy is updated once a day, so the two can differ.
 _ANCHOR = """
 anchor AS (
     SELECT max(date) AS d
@@ -187,6 +188,15 @@ def _system_category(value: str) -> str:
     return value if value in KNOWN_SYSTEMS else OTHER_CATEGORY
 
 
+class Dimension(StrEnum):
+    """A series the dashboard draws."""
+
+    RECENT = "recent"
+    OVERALL = "overall"
+    PYTHON_MINOR = "python_minor"
+    SYSTEM = "system"
+
+
 @dataclass(frozen=True)
 class Spec:
     """A supported dimension: its query and its response shaper."""
@@ -195,16 +205,16 @@ class Spec:
     shape: Callable[[str, list[dict[str, Any]]], dict | None]
 
 
-SPECS: dict[str, Spec] = {
-    "recent": Spec(RECENT_SQL, shape_recent),
-    "overall": Spec(OVERALL_SQL, shape_overall),
-    "python_minor": Spec(
+SPECS: dict[Dimension, Spec] = {
+    Dimension.RECENT: Spec(RECENT_SQL, shape_recent),
+    Dimension.OVERALL: Spec(OVERALL_SQL, shape_overall),
+    Dimension.PYTHON_MINOR: Spec(
         PYTHON_MINOR_SQL,
         lambda package, rows: shape_category(
             package, rows, type_="python_minor_downloads", rename=_python_category
         ),
     ),
-    "system": Spec(
+    Dimension.SYSTEM: Spec(
         SYSTEM_SQL,
         lambda package, rows: shape_category(
             package, rows, type_="system_downloads", rename=_system_category
@@ -214,13 +224,12 @@ SPECS: dict[str, Spec] = {
 
 
 @alru_cache(maxsize=256, ttl=CACHE_TTL)
-async def fetch(package: str, dimension: str) -> dict | None:
+async def fetch(package: str, dimension: Dimension) -> dict | None:
     """Run one dimension's query, shape the rows for the API, and memoize it.
 
     Cached because ClickPy is refreshed about once a day: how long an answer stays
     fresh is a property of the data source. ``None`` means the package has no
-    download records at all, which the route turns into a 404. The caller is
-    expected to have checked ``dimension`` against ``SPECS``.
+    download records at all, which the route turns into a 404.
     """
     spec = SPECS[dimension]
     rows = await clickhouse.execute(spec.sql, {"package": normalize_project(package)})
