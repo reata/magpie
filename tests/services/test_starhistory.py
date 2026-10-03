@@ -1,7 +1,6 @@
 """Tests for the star-history service's startup warm-up.
 
-The series itself is asserted through its endpoint, in
-``tests/routers/test_github.py``.
+The series itself is asserted through its endpoint, in ``tests/routers/test_github.py``.
 """
 
 import asyncio

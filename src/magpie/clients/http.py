@@ -1,8 +1,7 @@
 """Shared HTTP client for the services magpie calls over HTTP.
 
-One pooled ``httpx.AsyncClient`` is reused across requests, and transient server
-errors -- 5xx and transport failures -- are retried with jittered backoff. Rate
-limits are deliberately not retried; see ``RETRYABLE_STATUS``.
+One pooled ``httpx.AsyncClient`` is reused across requests, and transient server errors -- 5xx and transport failures
+-- are retried with jittered backoff. Rate limits are deliberately not retried; see ``RETRYABLE_STATUS``.
 """
 
 import asyncio
@@ -75,9 +74,8 @@ class HttpClient:
     ) -> httpx.Response:
         """GET ``url``, retrying transient server errors.
 
-        Retries are limited and jittered so a struggling upstream is not hammered
-        further. Every other status -- 4xx and 429 included -- is returned as-is
-        for the caller to decide what to forward.
+        Retries are limited and jittered so a struggling upstream is not hammered further. Every other status -- 4xx
+        and 429 included -- is returned as-is for the caller to decide what to forward.
         """
         last_error = RemoteError(f"no attempt made for {url}")
         cause: BaseException | None = None

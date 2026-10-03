@@ -1,14 +1,13 @@
 """ClickPy business logic: the queries, their execution, and the shaping.
 
-ClickPy publishes the PyPI download dataset on a public, read-only ClickHouse
-instance. This module owns what the download endpoints mean: the SQL they run and
-the shaping that keeps the resulting JSON identical to the pypistats.org API (see
-https://pypistats.org/api/) -- only the three dimensions the dashboard draws
-(``overall``, ``python_minor``, ``system``) plus ``recent``.
+ClickPy publishes the PyPI download dataset on a public, read-only ClickHouse instance. This module owns what the
+download endpoints mean: the SQL they run and the shaping that keeps the resulting JSON identical to the
+pypistats.org API (see https://pypistats.org/api/) -- only the three dimensions the dashboard draws (``overall``,
+``python_minor``, ``system``) plus ``recent``.
 
-Every query reads ClickPy's pre-aggregated tables instead of the 2.2 trillion row
-``pypi`` table: those are ordered by project, so a single-package query prunes to
-that package's rows, which is what the public read-only instance is sized for.
+Every query reads ClickPy's pre-aggregated tables instead of the 2.2 trillion row ``pypi`` table: those are ordered
+by project, so a single-package query prunes to that package's rows, which is what the public read-only instance is
+sized for.
 """
 
 import logging
@@ -43,8 +42,8 @@ NULL_CATEGORY = "null"
 OTHER_CATEGORY = "other"
 KNOWN_SYSTEMS = frozenset({"Linux", "Windows", "Darwin"})
 
-# The window is anchored on the newest date the dataset has rather than on
-# ``today()``: ClickPy is updated once a day, so the two can differ.
+# The window is anchored on the newest date the dataset has rather than on ``today()``: ClickPy is updated once a day,
+# so the two can differ.
 _ANCHOR = """
 anchor AS (
     SELECT max(date) AS d
