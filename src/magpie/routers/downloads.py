@@ -1,4 +1,4 @@
-"""``/api/clickpy`` -- download statistics straight from ClickHouse.
+"""`/api/clickpy`: PyPI download statistics straight from ClickHouse.
 
 Serves the dashboard's download charts from ClickPy's public dataset, in the JSON
 shapes, the 180 day window and the category names of the pypistats.org API (see
@@ -11,9 +11,12 @@ means. The queries, their cache and the warm-up live in
 
 from fastapi import APIRouter, HTTPException
 
+from magpie.routers import docs_tag
 from magpie.services import clickpy
 
-router = APIRouter(prefix="/api/clickpy", tags=["downloads"])
+TAG = docs_tag(__name__)
+
+router = APIRouter(prefix="/api/clickpy", tags=[TAG])
 
 
 @router.get("/{package}/{dimension}")
