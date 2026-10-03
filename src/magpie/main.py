@@ -1,12 +1,11 @@
 """Application assembly: middleware, shared error handling, and route wiring.
 
 Routes live in ``magpie.routers`` and everything that talks to another service lives in ``magpie.clients``; this
-module only puts them together plus the startup/shutdown hooks.
+module only puts them together plus closing the shared upstream clients on shutdown.
 """
 
-import asyncio
 import logging
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError, metadata
 from typing import cast
 
@@ -18,28 +17,17 @@ from fastapi.responses import JSONResponse
 from sqllineage.drawing import app as sqllineage_app
 from starlette.types import ASGIApp
 
-from magpie import services
 from magpie.clients import clickhouse
 from magpie.clients.http import http
 from magpie.errors import RemoteError
 from magpie.routers import docs_metadata, downloads, github, meta
-from magpie.services import clickpy, starhistory
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    tasks = (
-        [asyncio.create_task(service.prewarm()) for service in (clickpy, starhistory)]
-        if services.PREWARM_ENABLED
-        else []
-    )
     yield
-    for task in tasks:
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
     await http.aclose()
     await clickhouse.aclose()
 
