@@ -34,9 +34,8 @@ multi-trillion row ``pypi`` table they are built from:
 """
 
 import datetime
-import logging
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from functools import partial
@@ -47,8 +46,6 @@ from pydantic import BaseModel, Field
 
 from magpie.clients import clickhouse
 from magpie.services import CACHE_TTL
-
-logger = logging.getLogger(__name__)
 
 
 class SeriesWindow(StrEnum):
@@ -427,29 +424,3 @@ async def fetch_series(package: str, dimension: SeriesDimension, window: SeriesW
     window_spec = WINDOW_SPECS[window]
     rows = await clickhouse.execute(spec.sql(window_spec), {"package": normalize_project(package)})
     return spec.shape(package, rows, window_spec.interval)
-
-
-# The dashboard's package, warmed at startup.
-PREWARM_PACKAGE = "sqllineage"
-
-
-async def prewarm() -> None:
-    """Fill the cache for the responses the dashboard opens with.
-
-    That is ``recent`` and every series at its default window; the other windows are fetched, and cached, on demand.
-    Best effort: a cold or unreachable ClickHouse must not stop the app from starting, and a later request just pays
-    for its own query instead.
-    """
-    # Keyword arguments to match the routes' calls: alru_cache keys positional and keyword calls separately.
-    warmups: list[tuple[str, Awaitable[object]]] = [
-        ("recent", fetch_recent(package=PREWARM_PACKAGE)),
-        *(
-            (dimension, fetch_series(package=PREWARM_PACKAGE, dimension=dimension, window=DEFAULT_WINDOW))
-            for dimension in SERIES_SPECS
-        ),
-    ]
-    for label, warmup in warmups:
-        try:
-            await warmup
-        except Exception:  # noqa: BLE001 -- any query failure is non-fatal here
-            logger.warning("prewarm failed for %s/%s", PREWARM_PACKAGE, label, exc_info=True)

@@ -9,7 +9,3 @@ response.
 
 # ClickPy and GitHub are both refreshed about once a day, so a shorter TTL would only spend more of their quota.
 CACHE_TTL = 6 * 60 * 60
-
-# Whether the application warms these caches at startup. Tests turn it off: their lifespan would race the per-test
-# fakes.
-PREWARM_ENABLED: bool = True

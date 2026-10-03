@@ -4,11 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import magpie.main as main
-from magpie import services
 from magpie.services import clickpy, starhistory
-
-# The startup warm-up would race the per-test fakes; the caches are exercised directly in the tests instead.
-services.PREWARM_ENABLED = False
 
 
 @pytest.fixture(scope="session")

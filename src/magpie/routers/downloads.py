@@ -6,8 +6,8 @@ optional ``window`` (180 days by default); see ``magpie.services.clickpy`` for t
 shapes are kept for backward compatibility, not because the service still mirrors pypistats: the data comes from
 ClickPy, and the responses add fields pypistats has no equivalent for, such as the monthly rank.
 
-The routes only map HTTP: which dimensions exist and what a missing package means. The queries, their cache and the
-warm-up live in ``magpie.services.clickpy``.
+The routes only map HTTP: which dimensions exist and what a missing package means. The queries and their cache live in
+``magpie.services.clickpy``.
 """
 
 from typing import Annotated

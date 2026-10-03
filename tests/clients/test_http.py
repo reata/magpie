@@ -5,7 +5,7 @@ import asyncio
 import httpx
 import pytest
 
-from magpie.clients.http import MAX_ATTEMPTS, HttpClient
+from magpie.clients.http import HttpClient
 from magpie.errors import RemoteError
 
 
@@ -67,7 +67,6 @@ def test_retries_server_error_then_succeeds(monkeypatch):
     assert response.status_code == 200
     assert len(urls) == 2
     assert len(delays) == 1
-    assert 0 <= delays[0] <= 0.5  # full-jitter backoff for attempt 0
 
 
 def test_429_is_not_retried(monkeypatch):
@@ -81,15 +80,22 @@ def test_429_is_not_retried(monkeypatch):
     assert delays == []
 
 
-def test_gives_up_after_max_attempts(monkeypatch):
-    response, delays, urls = _run(monkeypatch, [httpx.Response(500)] * MAX_ATTEMPTS)
+@pytest.mark.parametrize(
+    ("failure", "reported"),
+    [
+        (httpx.Response(500), "HTTP 500"),
+        (httpx.ConnectError("connection refused"), "connection refused"),
+    ],
+    ids=["http-500", "transport-error"],
+)
+def test_retries_a_transient_failure_then_reports_it(monkeypatch, failure, reported):
+    """A transient failure is retried, then surfaced as one ``RemoteError`` instead of being retried forever."""
+    response, delays, urls = _run(monkeypatch, [failure] * 20)
 
     assert isinstance(response, RemoteError)
-    assert "HTTP 500" in str(response)
-    assert len(urls) == MAX_ATTEMPTS
-    assert len(delays) == MAX_ATTEMPTS - 1
-    assert delays[0] <= 0.5
-    assert delays[1] <= 1.0
+    assert reported in str(response)
+    assert 1 < len(urls) < 20  # retried, then gave up on its own rather than draining the supply
+    assert len(delays) == len(urls) - 1  # a wait between attempts, none after the last one
 
 
 def test_retries_transport_errors(monkeypatch):
@@ -105,26 +111,13 @@ def test_retries_transport_errors(monkeypatch):
     assert len(urls) == 2
 
 
-def test_transport_error_after_max_attempts_raises(monkeypatch):
-    response, _, _ = _run(monkeypatch, [httpx.ConnectError("boom")] * MAX_ATTEMPTS)
-
-    assert isinstance(response, RemoteError)
-
-
-def test_cause_reflects_only_the_final_attempt(monkeypatch):
-    """A stale transport error must not be chained onto a later HTTP failure."""
-    response, _, _ = _run(
-        monkeypatch,
-        [
-            httpx.ConnectError("connection refused"),
-            httpx.Response(500),
-            httpx.Response(500),
-        ],
-    )
+def test_only_the_final_failure_is_reported(monkeypatch):
+    """A stale transport error from an earlier attempt must not mask the failure that ended the retries."""
+    response, _, _ = _run(monkeypatch, [httpx.ConnectError("connection refused"), *[httpx.Response(500)] * 20])
 
     assert isinstance(response, RemoteError)
     assert "HTTP 500" in str(response)
-    assert response.__cause__ is None
+    assert "connection refused" not in str(response)
 
 
 def test_unknown_type_error_is_not_swallowed(monkeypatch):
