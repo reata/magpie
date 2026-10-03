@@ -36,9 +36,10 @@ multi-trillion row ``pypi`` table they are built from:
 import datetime
 import logging
 import re
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
+from functools import partial
 from typing import Any, Literal
 
 from async_lru import alru_cache
@@ -66,13 +67,22 @@ class SeriesInterval(StrEnum):
     WEEK = "week"
 
 
+class SeriesDimension(StrEnum):
+    """A time series the dashboard draws."""
+
+    OVERALL = "overall"
+    PYTHON_MINOR = "python_minor"
+    SYSTEM = "system"
+
+
 @dataclass(frozen=True)
 class WindowSpec:
-    """How far a window reaches, and how finely its dates are bucketed."""
+    """How far a window reaches, and how finely its dates are bucketed.
 
-    # Subtracted from the package's newest date; ``None`` is every date ClickPy has.
+    ``days`` is subtracted from the package's newest date; ``None`` is every date ClickPy has.
+    """
+
     days: int | None
-    # The granularity of the returned points, which is also how the query groups them.
     interval: SeriesInterval
 
 
@@ -86,7 +96,6 @@ WINDOW_SPECS: dict[SeriesWindow, WindowSpec] = {
     SeriesWindow.ALL: WindowSpec(days=None, interval=SeriesInterval.WEEK),
 }
 
-# What a request gets when it does not ask for a window.
 DEFAULT_WINDOW = SeriesWindow.DAYS_180
 
 # The mirrors pypistats.org excludes from its numbers; the list is inherited with the API and kept, so a mirror replay
@@ -165,7 +174,6 @@ FROM (
 
 
 def _bucket(interval: SeriesInterval) -> str:
-    """The date a series groups by: the day itself, or the week it falls in."""
     return "toStartOfWeek(date)" if interval is SeriesInterval.WEEK else "date"
 
 
@@ -202,7 +210,6 @@ ORDER BY {bucket}
 
 
 def _category_sql(table: str, column: str, spec: WindowSpec) -> str:
-    """One category per bucket, over one window."""
     bucket = _bucket(spec.interval)
     if spec.days is None:
         return f"""
@@ -227,11 +234,6 @@ WHERE project = %(package)s
 GROUP BY {bucket}, category
 ORDER BY {bucket}, category
 """
-
-
-def _sqls_by_window(build: Callable[[WindowSpec], str]) -> dict[SeriesWindow, str]:
-    """One series query per window a client can ask for."""
-    return {window: build(spec) for window, spec in WINDOW_SPECS.items()}
 
 
 def normalize_project(name: str) -> str:
@@ -349,7 +351,7 @@ def shape_category(
     type_: Literal["python_minor_downloads", "system_downloads"],
     rename: Callable[[str], str],
 ) -> SeriesDownloads | None:
-    """Shape a ``(date, category, downloads)`` series."""
+    """Shape a ``(bucket, category, downloads)`` series."""
     if not rows:
         return None
     return SeriesDownloads(
@@ -377,39 +379,23 @@ def _system_category(value: str) -> str:
     return value if value in KNOWN_SYSTEMS else OTHER_CATEGORY
 
 
-class SeriesDimension(StrEnum):
-    """A time series the dashboard draws."""
-
-    OVERALL = "overall"
-    PYTHON_MINOR = "python_minor"
-    SYSTEM = "system"
-
-
 @dataclass(frozen=True)
 class SeriesSpec:
-    """A supported series: its queries, one per window, and its response shaper."""
+    """A supported series: how to build its query for a window, and its response shaper."""
 
-    sqls: Mapping[SeriesWindow, str]
+    sql: Callable[[WindowSpec], str]
     shape: Callable[[str, list[dict[str, Any]], SeriesInterval], SeriesDownloads | None]
 
 
 SERIES_SPECS: dict[SeriesDimension, SeriesSpec] = {
-    SeriesDimension.OVERALL: SeriesSpec(sqls=_sqls_by_window(_overall_sql), shape=shape_overall),
+    SeriesDimension.OVERALL: SeriesSpec(sql=_overall_sql, shape=shape_overall),
     SeriesDimension.PYTHON_MINOR: SeriesSpec(
-        sqls=_sqls_by_window(
-            lambda spec: _category_sql("pypi.pypi_downloads_per_day_by_version_by_python", "python_minor", spec)
-        ),
-        shape=lambda package, rows, interval: shape_category(
-            package, rows, interval, type_="python_minor_downloads", rename=_python_category
-        ),
+        sql=partial(_category_sql, "pypi.pypi_downloads_per_day_by_version_by_python", "python_minor"),
+        shape=partial(shape_category, type_="python_minor_downloads", rename=_python_category),
     ),
     SeriesDimension.SYSTEM: SeriesSpec(
-        sqls=_sqls_by_window(
-            lambda spec: _category_sql("pypi.pypi_downloads_per_day_by_version_by_system", "system", spec)
-        ),
-        shape=lambda package, rows, interval: shape_category(
-            package, rows, interval, type_="system_downloads", rename=_system_category
-        ),
+        sql=partial(_category_sql, "pypi.pypi_downloads_per_day_by_version_by_system", "system"),
+        shape=partial(shape_category, type_="system_downloads", rename=_system_category),
     ),
 }
 
@@ -438,8 +424,9 @@ async def fetch_series(package: str, dimension: SeriesDimension, window: SeriesW
     ``alru_cache`` keys calls by their arguments: a default here would give one request two cache entries.
     """
     spec = SERIES_SPECS[dimension]
-    rows = await clickhouse.execute(spec.sqls[window], {"package": normalize_project(package)})
-    return spec.shape(package, rows, WINDOW_SPECS[window].interval)
+    window_spec = WINDOW_SPECS[window]
+    rows = await clickhouse.execute(spec.sql(window_spec), {"package": normalize_project(package)})
+    return spec.shape(package, rows, window_spec.interval)
 
 
 # The dashboard's package, warmed at startup.

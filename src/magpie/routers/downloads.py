@@ -1,18 +1,18 @@
 """`/api/clickpy`: PyPI download statistics straight from ClickHouse.
 
 Serves the dashboard's download charts from ClickPy's public dataset, using the JSON shapes, the window and the
-category names this API inherited from pypistats.org (see https://pypistats.org/api/). The series routes take a
-``window``: 180 days unless the client asks for a year, three years or everything ClickPy has; the three-year and
-all-time windows are bucketed by week, so each point's ``date`` is the start of its week and the response reports that
-in ``interval``. Those shapes are kept for
-backward compatibility, not because the service still mirrors pypistats: the data comes from ClickPy, and the responses
-add fields pypistats has no equivalent for, such as the monthly rank.
+category names this API inherited from pypistats.org (see https://pypistats.org/api/). The series routes take an
+optional ``window`` (180 days by default); see ``magpie.services.clickpy`` for the spans and their bucketing. Those
+shapes are kept for backward compatibility, not because the service still mirrors pypistats: the data comes from
+ClickPy, and the responses add fields pypistats has no equivalent for, such as the monthly rank.
 
 The routes only map HTTP: which dimensions exist and what a missing package means. The queries, their cache and the
 warm-up live in ``magpie.services.clickpy``.
 """
 
-from fastapi import APIRouter, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query
 
 from magpie.routers import docs_tag
 from magpie.services import clickpy
@@ -37,9 +37,12 @@ async def clickpy_recent(package: str) -> clickpy.RecentDownloads:
 async def clickpy_series(
     package: str,
     dimension: clickpy.SeriesDimension,
-    window: clickpy.SeriesWindow = clickpy.DEFAULT_WINDOW,
+    window: Annotated[
+        clickpy.SeriesWindow,
+        Query(description="How far back the series reaches; 3y and all are bucketed by week."),
+    ] = clickpy.DEFAULT_WINDOW,
 ) -> clickpy.SeriesDownloads:
-    """One package's daily download series for one dimension and window."""
+    """One package's download series for one dimension and window."""
     payload = await clickpy.fetch_series(package=package, dimension=dimension, window=window)
     if payload is None:
         raise HTTPException(status_code=404, detail=f"no download data for {package}")
