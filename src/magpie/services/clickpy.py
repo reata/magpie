@@ -1,8 +1,12 @@
 """ClickPy business logic: the queries, their execution, and the shaping.
 
 ClickPy publishes the PyPI download dataset on a public, read-only ClickHouse instance. This module owns what the
-download endpoints mean: the SQL they run and the shaping that keeps the resulting JSON identical to the
-pypistats.org API (see https://pypistats.org/api/).
+download endpoints mean: the SQL they run and the shaping of their JSON.
+
+The response shapes, the category names and the ``type`` values come from pypistats.org (see
+https://pypistats.org/api/), the API magpie started from, and they are kept for backward compatibility. magpie is not
+a pypistats mirror any more: the numbers come from ClickPy, and the responses have grown fields pypistats has no
+equivalent for -- the monthly rank below -- so the JSON is a superset of the old shape, not identical to it.
 
 The dashboard draws two different shapes, so there are two entry points with two response models: ``fetch_recent``
 serves one package's last day/week/month totals and ``fetch_series`` serves the daily ``overall``, ``python_minor``
@@ -48,8 +52,8 @@ logger = logging.getLogger(__name__)
 # here. The dashboard labels its x axis "MM-DD", which only stays unambiguous inside a single year.
 WINDOW_DAYS = 180
 
-# The mirrors pypistats.org excludes from its numbers. ClickPy also sees Nexus and other installers; keeping this list
-# identical is what makes the numbers line up with pypistats.org.
+# The mirrors pypistats.org excludes from its numbers; the list is inherited with the API and kept, so a mirror replay
+# is not counted as a download. ClickPy also sees Nexus and other installers, which the list does not cover.
 MIRRORS = ("bandersnatch", "z3c.pypimirror", "artifactory", "devpi")
 _MIRRORS_SQL = "(" + ", ".join(f"'{name}'" for name in MIRRORS) + ")"
 

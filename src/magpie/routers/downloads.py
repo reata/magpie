@@ -1,7 +1,9 @@
 """`/api/clickpy`: PyPI download statistics straight from ClickHouse.
 
-Serves the dashboard's download charts from ClickPy's public dataset, in the JSON shapes, the 180 day window and the
-category names of the pypistats.org API (see https://pypistats.org/api/).
+Serves the dashboard's download charts from ClickPy's public dataset, using the JSON shapes, the 180 day window and
+the category names this API inherited from pypistats.org (see https://pypistats.org/api/). Those are kept for
+backward compatibility, not because the service still mirrors pypistats: the data comes from ClickPy, and the
+responses add fields pypistats has no equivalent for, such as the monthly rank.
 
 The routes only map HTTP: which dimensions exist and what a missing package means. The queries, their cache and the
 warm-up live in ``magpie.services.clickpy``.
