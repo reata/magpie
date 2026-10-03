@@ -26,5 +26,9 @@ def client():
 @pytest.fixture(autouse=True)
 def clear_caches():
     """Start every test with empty caches, so nothing an earlier test cached can leak in."""
-    for cache in (clickpy.fetch, starhistory.star_history):
+    for cache in (
+        clickpy.fetch_recent,
+        clickpy.fetch_series,
+        starhistory.star_history,
+    ):
         cache.cache_clear()
