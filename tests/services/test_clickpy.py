@@ -13,9 +13,11 @@ from magpie import services
 from magpie.errors import RemoteError
 from magpie.services import clickpy
 from magpie.services.clickpy import (
-    SPECS,
+    RANK_SQL,
+    RECENT_SQL,
+    SERIES_SPECS,
     WINDOW_DAYS,
-    Dimension,
+    SeriesDimension,
     normalize_project,
     shape_overall,
     shape_recent,
@@ -51,9 +53,19 @@ def test_normalization_keeps_distinct_projects_distinct():
 
 def test_shape_recent():
     rows = [{"last_day": 1, "last_week": 2, "last_month": 3, "rows_seen": 30}]
+    rank = [{"rank_month": 4, "total_packages": 8}]
 
-    assert shape_recent("sqllineage", rows) == {
-        "data": {"last_day": 1, "last_month": 3, "last_week": 2},
+    payload = shape_recent("sqllineage", rows, rank)
+
+    assert payload is not None
+    assert payload.model_dump(mode="json") == {
+        "data": {
+            "last_day": 1,
+            "last_month": 3,
+            "last_week": 2,
+            "rank_month": 4,
+            "rank_month_percentile": 50.0,
+        },
         "package": "sqllineage",
         "type": "recent_downloads",
     }
@@ -63,8 +75,29 @@ def test_shape_recent_unknown_package():
     """The all-zero row is ambiguous on its own, hence ``rows_seen``."""
     all_zero = [{"last_day": 0, "last_week": 0, "last_month": 0, "rows_seen": 0}]
 
-    assert shape_recent("nope", all_zero) is None
-    assert shape_recent("nope", []) is None
+    assert shape_recent("nope", all_zero, []) is None
+    assert shape_recent("nope", [], []) is None
+
+
+@pytest.mark.parametrize(
+    ("rank_month", "total_packages", "expected"),
+    [
+        (1, 10000, 0.01),
+        (3953, 931904, 0.4242),
+        (7, 8, 87.5),
+        (5, 0, 0.0),
+    ],
+)
+def test_rank_percentile_is_the_top_share(rank_month, total_packages, expected):
+    """The percentile is ``rank / total``, so the top package is near 0 and the last is 100: the package sits in the top
+    ``rank_month_percentile`` percent.
+    """
+    rows = [{"last_day": 1, "last_week": 2, "last_month": 3, "rows_seen": 30}]
+
+    payload = shape_recent("pkg", rows, [{"rank_month": rank_month, "total_packages": total_packages}])
+
+    assert payload is not None
+    assert payload.data.rank_month_percentile == expected
 
 
 def test_shape_overall_emits_both_categories_oldest_first():
@@ -76,7 +109,8 @@ def test_shape_overall_emits_both_categories_oldest_first():
         ],
     )
 
-    assert payload == {
+    assert payload is not None
+    assert payload.model_dump(mode="json") == {
         "data": [
             {"category": "with_mirrors", "date": "2026-09-11", "downloads": 10},
             {"category": "without_mirrors", "date": "2026-09-11", "downloads": 8},
@@ -91,27 +125,29 @@ def test_shape_overall_emits_both_categories_oldest_first():
 @pytest.mark.parametrize(
     ("dimension", "raw", "expected"),
     [
-        (Dimension.PYTHON_MINOR, "3.12", "3.12"),
-        (Dimension.PYTHON_MINOR, "", "null"),
-        (Dimension.SYSTEM, "Linux", "Linux"),
-        (Dimension.SYSTEM, "Darwin", "Darwin"),
-        (Dimension.SYSTEM, "Windows", "Windows"),
-        (Dimension.SYSTEM, "", "null"),
-        (Dimension.SYSTEM, "CYGWIN_NT-10.0-19042", "other"),
-        (Dimension.SYSTEM, "FreeBSD", "other"),
+        (SeriesDimension.PYTHON_MINOR, "3.12", "3.12"),
+        (SeriesDimension.PYTHON_MINOR, "", "null"),
+        (SeriesDimension.SYSTEM, "Linux", "Linux"),
+        (SeriesDimension.SYSTEM, "Darwin", "Darwin"),
+        (SeriesDimension.SYSTEM, "Windows", "Windows"),
+        (SeriesDimension.SYSTEM, "", "null"),
+        (SeriesDimension.SYSTEM, "CYGWIN_NT-10.0-19042", "other"),
+        (SeriesDimension.SYSTEM, "FreeBSD", "other"),
     ],
 )
 def test_category_mapping(dimension, raw, expected):
-    payload = SPECS[dimension].shape("pkg", [{"date": DAY, "category": raw, "downloads": 7}])
+    payload = SERIES_SPECS[dimension].shape("pkg", [{"date": DAY, "category": raw, "downloads": 7}])
 
     assert payload is not None
-    assert payload["data"] == [{"category": expected, "date": "2026-09-11", "downloads": 7}]
-    assert payload["type"] == ("python_minor_downloads" if dimension is Dimension.PYTHON_MINOR else "system_downloads")
+    assert payload.model_dump(mode="json")["data"] == [{"category": expected, "date": "2026-09-11", "downloads": 7}]
+    assert payload.type == (
+        "python_minor_downloads" if dimension is SeriesDimension.PYTHON_MINOR else "system_downloads"
+    )
 
 
-@pytest.mark.parametrize("dimension", [Dimension.OVERALL, Dimension.PYTHON_MINOR, Dimension.SYSTEM])
+@pytest.mark.parametrize("dimension", list(SeriesDimension))
 def test_empty_series_has_no_payload(dimension):
-    assert SPECS[dimension].shape("nope", []) is None
+    assert SERIES_SPECS[dimension].shape("nope", []) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -119,27 +155,35 @@ def test_empty_series_has_no_payload(dimension):
 # --------------------------------------------------------------------------- #
 
 
-def test_only_the_dimensions_the_dashboard_draws_are_supported():
-    assert set(SPECS) == set(Dimension)
+def test_only_the_series_the_dashboard_draws_are_supported():
+    assert set(SERIES_SPECS) == set(SeriesDimension)
+
+
+def test_recent_is_not_a_series_dimension():
+    """``recent`` has its own entry point and response model, so it is not a series dimension."""
+    assert "recent" not in {dimension.value for dimension in SeriesDimension}
 
 
 def test_queries_use_aggregate_tables_only():
-    for spec in SPECS.values():
-        assert "%(package)s" in spec.sql
-        # The 2.2 trillion row detail table is deliberately never queried: it is what would exhaust the public
-        # instance's read quota.
-        assert "FROM pypi.pypi\n" not in spec.sql
-        assert "pypi.pypi_downloads" in spec.sql
+    for sql in (
+        RECENT_SQL,
+        RANK_SQL,
+        *(spec.sql for spec in SERIES_SPECS.values()),
+    ):
+        assert "%(package)s" in sql
+        # The raw ``pypi`` table is deliberately never queried: it is what would exhaust the public instance's read
+        # quota.
+        assert "FROM pypi.pypi\n" not in sql
 
 
-@pytest.mark.parametrize("dimension", [Dimension.RECENT, Dimension.OVERALL])
-def test_mirror_downloads_are_excluded_like_pypistats(dimension):
-    assert "lower(installer) NOT IN ('bandersnatch', 'z3c.pypimirror', 'artifactory', 'devpi')" in SPECS[dimension].sql
+@pytest.mark.parametrize("sql", [RECENT_SQL, SERIES_SPECS[SeriesDimension.OVERALL].sql])
+def test_mirror_downloads_are_excluded_like_pypistats(sql):
+    assert "lower(installer) NOT IN ('bandersnatch', 'z3c.pypimirror', 'artifactory', 'devpi')" in sql
 
 
-@pytest.mark.parametrize("dimension", [Dimension.OVERALL, Dimension.PYTHON_MINOR, Dimension.SYSTEM])
+@pytest.mark.parametrize("dimension", list(SeriesDimension))
 def test_series_are_windowed(dimension):
-    assert f"a.d - {WINDOW_DAYS}" in SPECS[dimension].sql
+    assert f"a.d - {WINDOW_DAYS}" in SERIES_SPECS[dimension].sql
 
 
 # --------------------------------------------------------------------------- #
@@ -147,34 +191,45 @@ def test_series_are_windowed(dimension):
 # --------------------------------------------------------------------------- #
 
 
-def test_prewarm_queries_every_dimension(monkeypatch):
+def test_prewarm_queries_recent_and_every_series(monkeypatch):
     calls = []
 
-    # Keyword-only: the warm-up must key the cache exactly as the route does.
-    async def fake_fetch(*, package, dimension):
-        calls.append((package, dimension))
+    # Keyword-only: the warm-up must key the caches exactly as the routes do.
+    async def fake_recent(*, package):
+        calls.append(("recent", package))
 
-    monkeypatch.setattr(clickpy, "fetch", fake_fetch)
+    async def fake_series(*, package, dimension):
+        calls.append((dimension, package))
+
+    monkeypatch.setattr(clickpy, "fetch_recent", fake_recent)
+    monkeypatch.setattr(clickpy, "fetch_series", fake_series)
 
     asyncio.run(clickpy.prewarm())
 
-    assert calls == [(clickpy.PREWARM_PACKAGE, dimension) for dimension in SPECS]
+    assert calls == [
+        ("recent", clickpy.PREWARM_PACKAGE),
+        *((dimension, clickpy.PREWARM_PACKAGE) for dimension in SERIES_SPECS),
+    ]
 
 
-def test_prewarm_survives_a_failing_dimension(monkeypatch):
-    """A cold ClickHouse must not stop the app from starting, nor keep the remaining dimensions from being warmed."""
+def test_prewarm_survives_a_failing_series(monkeypatch):
+    """A cold ClickHouse must not stop the app from starting, nor keep the remaining warm-ups from running."""
     calls = []
 
-    async def flaky_fetch(*, package, dimension):
+    async def fake_recent(*, package):
+        calls.append("recent")
+
+    async def flaky_series(*, package, dimension):
         calls.append(dimension)
-        if dimension is Dimension.OVERALL:
+        if dimension is SeriesDimension.OVERALL:
             raise RemoteError("clickhouse query failed: boom")
 
-    monkeypatch.setattr(clickpy, "fetch", flaky_fetch)
+    monkeypatch.setattr(clickpy, "fetch_recent", fake_recent)
+    monkeypatch.setattr(clickpy, "fetch_series", flaky_series)
 
     asyncio.run(clickpy.prewarm())
 
-    assert calls == list(SPECS)
+    assert calls == ["recent", *SERIES_SPECS]
 
 
 def test_prewarm_is_disabled_for_tests():
