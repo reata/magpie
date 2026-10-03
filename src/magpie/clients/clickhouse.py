@@ -1,8 +1,7 @@
 """Shared ClickHouse client for the download statistics endpoints.
 
-One lazily created ``AsyncClient`` is reused across requests -- the driver pools
-its connections underneath -- and every driver failure becomes a ``RemoteError``,
-which is what the API maps to a 503.
+One lazily created ``AsyncClient`` is reused across requests -- the driver pools its connections underneath -- and
+every driver failure becomes a ``RemoteError``, which is what the API maps to a 503.
 """
 
 import logging

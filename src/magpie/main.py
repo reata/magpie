@@ -1,8 +1,7 @@
 """Application assembly: middleware, shared error handling, and route wiring.
 
-Routes live in ``magpie.routers`` and everything that talks to another service
-lives in ``magpie.clients``; this module only puts them together plus the
-startup/shutdown hooks.
+Routes live in ``magpie.routers`` and everything that talks to another service lives in ``magpie.clients``; this
+module only puts them together plus the startup/shutdown hooks.
 """
 
 import asyncio
@@ -85,10 +84,9 @@ app.mount("/api/sqllineage", cast(ASGIApp, WSGIMiddleware(sqllineage_app)))
 async def remote_error(request: Request, exc: RemoteError) -> JSONResponse:
     """Turn a failed remote call into a 503 for the client.
 
-    Views raise instead of returning an error ``Response``: anything a cached
-    view *returns* is stored as a successful result for the whole TTL, so a failed
-    call would pin the endpoint to its error for hours. Raising keeps every
-    failure out of the cache.
+    Views raise instead of returning an error ``Response``: anything a cached view *returns* is stored as a
+    successful result for the whole TTL, so a failed call would pin the endpoint to its error for hours. Raising
+    keeps every failure out of the cache.
     """
     logger.warning("remote call failed: %s", exc)
     return JSONResponse({"detail": str(exc)}, status_code=503)

@@ -100,9 +100,8 @@ def test_directory_accepts_file_path_and_lists_its_parent():
 
 
 def test_directory_rejects_path_outside_data_root():
-    # The mounted WSGI application guards ``d``/``f`` against
-    # SQLLineageConfig.DIRECTORY inside its own __call__, so an arbitrary
-    # directory is not listable.
+    # The mounted WSGI application guards ``d``/``f`` against SQLLineageConfig.DIRECTORY inside its own __call__, so an
+    # arbitrary directory is not listable.
     response = client.post("/api/sqllineage/directory", json={"d": "."})
 
     assert response.status_code == 403
