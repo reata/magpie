@@ -5,13 +5,10 @@ side -- the response envelopes, what a missing package means, the cache, and the
 startup warm-up.
 """
 
-import asyncio
 import datetime
 
 from magpie.clients import clickhouse
 from magpie.errors import RemoteError
-from magpie.routers import downloads as downloads_router
-from magpie.services import clickpy
 from magpie.services.clickpy import SPECS
 
 DAY = datetime.date(2026, 9, 11)
@@ -129,47 +126,3 @@ def test_failure_is_503_and_not_cached(client, monkeypatch):
     assert first.status_code == 503
     assert "boom" in first.json()["detail"]
     assert second.status_code == 200
-
-
-# --------------------------------------------------------------------------- #
-# startup warm-up
-# --------------------------------------------------------------------------- #
-
-
-def test_prewarm_queries_every_dimension(monkeypatch):
-    calls = []
-
-    # Keyword-only: the warm-up must key the cache exactly as the route does.
-    async def fake_fetch(*, package, dimension):
-        calls.append((package, dimension))
-
-    monkeypatch.setattr(clickpy, "fetch", fake_fetch)
-
-    asyncio.run(downloads_router.prewarm())
-
-    assert calls == [
-        (downloads_router.PREWARM_PACKAGE, dimension) for dimension in SPECS
-    ]
-
-
-def test_prewarm_survives_a_failing_dimension(monkeypatch):
-    """A cold ClickHouse must not stop the app from starting, nor keep the
-    remaining dimensions from being warmed."""
-    calls = []
-
-    async def flaky_fetch(*, package, dimension):
-        calls.append(dimension)
-        if dimension == "overall":
-            raise RemoteError("clickhouse query failed: boom")
-
-    monkeypatch.setattr(clickpy, "fetch", flaky_fetch)
-
-    asyncio.run(downloads_router.prewarm())
-
-    assert calls == list(SPECS)
-
-
-def test_prewarm_is_disabled_for_tests(client):
-    """The session TestClient runs the real lifespan; a live warm-up would race
-    the per-test fakes."""
-    assert downloads_router.PREWARM_ENABLED is False

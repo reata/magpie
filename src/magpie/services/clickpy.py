@@ -11,6 +11,7 @@ Every query reads ClickPy's pre-aggregated tables instead of the 2.2 trillion ro
 that package's rows, which is what the public read-only instance is sized for.
 """
 
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -20,6 +21,8 @@ from async_lru import alru_cache
 
 from magpie.clients import clickhouse
 from magpie.services import CACHE_TTL
+
+logger = logging.getLogger(__name__)
 
 #: pypistats retains 180 days and serves them as 181 inclusive dates ending on
 #: the newest one; the same span is kept here. The dashboard labels its x axis
@@ -225,3 +228,24 @@ async def fetch(package: str, dimension: str) -> dict | None:
     spec = SPECS[dimension]
     rows = await clickhouse.execute(spec.sql, {"package": normalize_project(package)})
     return spec.shape(package, rows)
+
+
+#: The dashboard's package, warmed at startup.
+PREWARM_PACKAGE = "sqllineage"
+
+
+async def prewarm() -> None:
+    """Fill the cache for every dimension of the dashboard package.
+
+    Best effort: a cold or unreachable ClickHouse must not stop the app from
+    starting, and a later request just pays for its own query instead.
+    """
+    for dimension in SPECS:
+        try:
+            # Keyword arguments to match the route's call: alru_cache keys
+            # positional and keyword calls separately.
+            await fetch(package=PREWARM_PACKAGE, dimension=dimension)
+        except Exception:  # noqa: BLE001 -- any query failure is non-fatal here
+            logger.warning(
+                "prewarm failed for %s/%s", PREWARM_PACKAGE, dimension, exc_info=True
+            )

@@ -5,10 +5,14 @@ credentials and a network -- because what the dashboard depends on is the
 contract they encode.
 """
 
+import asyncio
 import datetime
 
 import pytest
 
+from magpie import services
+from magpie.errors import RemoteError
+from magpie.services import clickpy
 from magpie.services.clickpy import (
     SPECS,
     WINDOW_DAYS,
@@ -144,3 +148,45 @@ def test_mirror_downloads_are_excluded_like_pypistats(dimension):
 @pytest.mark.parametrize("dimension", ["overall", "python_minor", "system"])
 def test_series_are_windowed(dimension):
     assert f"a.d - {WINDOW_DAYS}" in SPECS[dimension].sql
+
+
+# --------------------------------------------------------------------------- #
+# startup warm-up
+# --------------------------------------------------------------------------- #
+
+
+def test_prewarm_queries_every_dimension(monkeypatch):
+    calls = []
+
+    # Keyword-only: the warm-up must key the cache exactly as the route does.
+    async def fake_fetch(*, package, dimension):
+        calls.append((package, dimension))
+
+    monkeypatch.setattr(clickpy, "fetch", fake_fetch)
+
+    asyncio.run(clickpy.prewarm())
+
+    assert calls == [(clickpy.PREWARM_PACKAGE, dimension) for dimension in SPECS]
+
+
+def test_prewarm_survives_a_failing_dimension(monkeypatch):
+    """A cold ClickHouse must not stop the app from starting, nor keep the
+    remaining dimensions from being warmed."""
+    calls = []
+
+    async def flaky_fetch(*, package, dimension):
+        calls.append(dimension)
+        if dimension == "overall":
+            raise RemoteError("clickhouse query failed: boom")
+
+    monkeypatch.setattr(clickpy, "fetch", flaky_fetch)
+
+    asyncio.run(clickpy.prewarm())
+
+    assert calls == list(SPECS)
+
+
+def test_prewarm_is_disabled_for_tests():
+    """The session TestClient runs the real lifespan; a live warm-up would race
+    the per-test fakes."""
+    assert services.PREWARM_ENABLED is False
