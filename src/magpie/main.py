@@ -8,6 +8,7 @@ startup/shutdown hooks.
 import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
+from importlib.metadata import PackageNotFoundError, metadata
 from typing import cast
 
 import uvicorn
@@ -22,7 +23,7 @@ from magpie import services
 from magpie.clients import clickhouse
 from magpie.clients.http import http
 from magpie.errors import RemoteError
-from magpie.routers import downloads, github
+from magpie.routers import docs_metadata, downloads, github, meta
 from magpie.services import clickpy, starhistory
 
 logger = logging.getLogger(__name__)
@@ -44,7 +45,21 @@ async def lifespan(app: FastAPI):
     await clickhouse.aclose()
 
 
-app = FastAPI(lifespan=lifespan)
+try:
+    PROJECT = metadata("magpie")
+except PackageNotFoundError:  # source tree that was never installed as a distribution
+    PROJECT = {}
+
+TAGS_METADATA = [docs_metadata(module) for module in (meta, downloads, github)]
+
+app = FastAPI(
+    title=PROJECT.get("Name", "magpie"),
+    version=PROJECT.get("Version", "unknown"),
+    summary=PROJECT.get("Summary", ""),
+    description=PROJECT.get("Description", ""),
+    openapi_tags=TAGS_METADATA,
+    lifespan=lifespan,
+)
 
 origins = ["http://localhost:3000", "http://localhost:8000", "https://reata.github.io"]
 
@@ -56,6 +71,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(meta.router)
 app.include_router(downloads.router)
 app.include_router(github.router)
 
@@ -64,11 +80,6 @@ app.include_router(github.router)
 # /api/sqllineage would never be reached. sqllineage ships its own WSGI
 # controllers, hence the mount rather than re-declared routes.
 app.mount("/api/sqllineage", cast(ASGIApp, WSGIMiddleware(sqllineage_app)))
-
-
-@app.get("/")
-async def root():
-    return {"message": "Hello World from magpie"}
 
 
 @app.exception_handler(RemoteError)

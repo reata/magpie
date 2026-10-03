@@ -1,12 +1,15 @@
-"""``/api/github`` and ``/api/starhistory`` -- the two GitHub-backed routes."""
+"""`/api/github` and `/api/starhistory`: GitHub repository data and star history."""
 
 from fastapi import APIRouter, Response
 
 from magpie.clients.http import http
+from magpie.routers import docs_tag
 from magpie.services.starhistory import star_history
 from magpie.settings import GITHUB_ACCESS_TOKEN
 
-router = APIRouter(prefix="/api", tags=["github"])
+TAG = docs_tag(__name__)
+
+router = APIRouter(prefix="/api", tags=[TAG])
 
 
 @router.get("/github/{github_path:path}")
