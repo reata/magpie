@@ -16,6 +16,7 @@ from magpie.services import clickpy
 from magpie.services.clickpy import (
     SPECS,
     WINDOW_DAYS,
+    Dimension,
     normalize_project,
     shape_overall,
     shape_recent,
@@ -90,14 +91,14 @@ def test_shape_overall_emits_both_categories_oldest_first():
 @pytest.mark.parametrize(
     ("dimension", "raw", "expected"),
     [
-        ("python_minor", "3.12", "3.12"),
-        ("python_minor", "", "null"),
-        ("system", "Linux", "Linux"),
-        ("system", "Darwin", "Darwin"),
-        ("system", "Windows", "Windows"),
-        ("system", "", "null"),
-        ("system", "CYGWIN_NT-10.0-19042", "other"),
-        ("system", "FreeBSD", "other"),
+        (Dimension.PYTHON_MINOR, "3.12", "3.12"),
+        (Dimension.PYTHON_MINOR, "", "null"),
+        (Dimension.SYSTEM, "Linux", "Linux"),
+        (Dimension.SYSTEM, "Darwin", "Darwin"),
+        (Dimension.SYSTEM, "Windows", "Windows"),
+        (Dimension.SYSTEM, "", "null"),
+        (Dimension.SYSTEM, "CYGWIN_NT-10.0-19042", "other"),
+        (Dimension.SYSTEM, "FreeBSD", "other"),
     ],
 )
 def test_category_mapping(dimension, raw, expected):
@@ -110,11 +111,15 @@ def test_category_mapping(dimension, raw, expected):
         {"category": expected, "date": "2026-09-11", "downloads": 7}
     ]
     assert payload["type"] == (
-        "python_minor_downloads" if dimension == "python_minor" else "system_downloads"
+        "python_minor_downloads"
+        if dimension is Dimension.PYTHON_MINOR
+        else "system_downloads"
     )
 
 
-@pytest.mark.parametrize("dimension", ["overall", "python_minor", "system"])
+@pytest.mark.parametrize(
+    "dimension", [Dimension.OVERALL, Dimension.PYTHON_MINOR, Dimension.SYSTEM]
+)
 def test_empty_series_has_no_payload(dimension):
     assert SPECS[dimension].shape("nope", []) is None
 
@@ -125,7 +130,7 @@ def test_empty_series_has_no_payload(dimension):
 
 
 def test_only_the_dimensions_the_dashboard_draws_are_supported():
-    assert set(SPECS) == {"recent", "overall", "python_minor", "system"}
+    assert set(SPECS) == set(Dimension)
 
 
 def test_queries_use_aggregate_tables_only():
@@ -137,7 +142,7 @@ def test_queries_use_aggregate_tables_only():
         assert "pypi.pypi_downloads" in spec.sql
 
 
-@pytest.mark.parametrize("dimension", ["recent", "overall"])
+@pytest.mark.parametrize("dimension", [Dimension.RECENT, Dimension.OVERALL])
 def test_mirror_downloads_are_excluded_like_pypistats(dimension):
     assert (
         "lower(installer) NOT IN ('bandersnatch', 'z3c.pypimirror', "
@@ -145,7 +150,9 @@ def test_mirror_downloads_are_excluded_like_pypistats(dimension):
     )
 
 
-@pytest.mark.parametrize("dimension", ["overall", "python_minor", "system"])
+@pytest.mark.parametrize(
+    "dimension", [Dimension.OVERALL, Dimension.PYTHON_MINOR, Dimension.SYSTEM]
+)
 def test_series_are_windowed(dimension):
     assert f"a.d - {WINDOW_DAYS}" in SPECS[dimension].sql
 
@@ -176,7 +183,7 @@ def test_prewarm_survives_a_failing_dimension(monkeypatch):
 
     async def flaky_fetch(*, package, dimension):
         calls.append(dimension)
-        if dimension == "overall":
+        if dimension is Dimension.OVERALL:
             raise RemoteError("clickhouse query failed: boom")
 
     monkeypatch.setattr(clickpy, "fetch", flaky_fetch)

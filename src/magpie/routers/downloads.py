@@ -17,12 +17,8 @@ router = APIRouter(prefix="/api/clickpy", tags=["downloads"])
 
 
 @router.get("/{package}/{dimension}")
-async def clickpy_stats(package: str, dimension: str):
+async def clickpy_stats(package: str, dimension: clickpy.Dimension):
     """One dimension of one package's download statistics."""
-    if dimension not in clickpy.SPECS:
-        raise HTTPException(
-            status_code=404, detail=f"unsupported dimension: {dimension}"
-        )
     payload = await clickpy.fetch(package=package, dimension=dimension)
     if payload is None:
         raise HTTPException(status_code=404, detail=f"no download data for {package}")

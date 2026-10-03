@@ -83,8 +83,8 @@ async def _stargazer_timestamps(repo: str) -> list[str]:
             return starred_at
 
 
-#: The dashboard's repository, warmed at startup: paging through it costs one
-#: request per hundred stars.
+# The dashboard's repository, warmed at startup: paging through it costs one
+# request per hundred stars.
 PREWARM_REPO = "reata/sqllineage"
 
 
