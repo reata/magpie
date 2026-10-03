@@ -5,6 +5,7 @@ daily series, so both the pagination and the date-series construction live here
 -- neither belongs to the route, which only knows about the HTTP response.
 """
 
+import logging
 from collections import Counter
 from datetime import date, datetime, timedelta, timezone
 
@@ -14,6 +15,8 @@ from magpie.clients.http import http
 from magpie.errors import RemoteError
 from magpie.services import CACHE_TTL
 from magpie.settings import GITHUB_ACCESS_TOKEN
+
+logger = logging.getLogger(__name__)
 
 PER_PAGE = 100
 
@@ -78,3 +81,20 @@ async def _stargazer_timestamps(repo: str) -> list[str]:
         page += 1
         if len(timestamps) < PER_PAGE:
             return starred_at
+
+
+# The dashboard's repository, warmed at startup: paging through it costs one
+# request per hundred stars.
+PREWARM_REPO = "reata/sqllineage"
+
+
+async def prewarm() -> None:
+    """Fill the cache for the dashboard's repository.
+
+    Best effort: GitHub being slow or unreachable must not stop the app from
+    starting, and a later request just pays for the pages itself.
+    """
+    try:
+        await star_history(PREWARM_REPO)
+    except Exception:  # noqa: BLE001 -- any failure is non-fatal here
+        logger.warning("prewarm failed for %s", PREWARM_REPO, exc_info=True)

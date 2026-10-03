@@ -18,21 +18,25 @@ from fastapi.responses import JSONResponse
 from sqllineage.drawing import app as sqllineage_app
 from starlette.types import ASGIApp
 
+from magpie import services
 from magpie.clients import clickhouse
 from magpie.clients.http import http
 from magpie.errors import RemoteError
 from magpie.routers import downloads, github
+from magpie.services import clickpy, starhistory
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    task = (
-        asyncio.create_task(downloads.prewarm()) if downloads.PREWARM_ENABLED else None
+    tasks = (
+        [asyncio.create_task(service.prewarm()) for service in (clickpy, starhistory)]
+        if services.PREWARM_ENABLED
+        else []
     )
     yield
-    if task is not None:
+    for task in tasks:
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task

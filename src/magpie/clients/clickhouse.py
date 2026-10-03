@@ -22,7 +22,7 @@ from magpie.settings import (
 
 logger = logging.getLogger(__name__)
 
-#: Seconds to wait for a query, matching the HTTP client's budget.
+# Seconds to wait for a query, matching the HTTP client's budget.
 QUERY_TIMEOUT = 10
 
 _client: Any = None
