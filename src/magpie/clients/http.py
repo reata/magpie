@@ -44,8 +44,8 @@ class HttpClient:
         self._sleep = sleep
         self._concurrency = concurrency
         self._semaphore = asyncio.Semaphore(concurrency)
-        # Built on first use so importing the app never depends on the ambient
-        # proxy environment (httpx parses ``NO_PROXY`` when a client is created).
+        # Built on first use so importing the app never depends on the ambient proxy environment (httpx parses
+        # ``NO_PROXY`` when a client is created).
         self._client: httpx.AsyncClient | None = None
 
     def _ensure_client(self) -> httpx.AsyncClient:
@@ -89,9 +89,7 @@ class HttpClient:
                     response = await client.get(url, headers=headers)
                 if response.status_code not in RETRYABLE_STATUS:
                     return response
-                last_error = RemoteError(
-                    f"upstream returned HTTP {response.status_code}"
-                )
+                last_error = RemoteError(f"upstream returned HTTP {response.status_code}")
             except httpx.TransportError as exc:
                 last_error = RemoteError(f"upstream request failed: {exc}")
                 cause = exc
@@ -107,6 +105,6 @@ class HttpClient:
         raise last_error
 
 
-# The one client every outbound HTTP call shares: one connection pool for the
-# whole process, closed by the application lifespan.
+# The one client every outbound HTTP call shares: one connection pool for the whole process, closed by the application
+# lifespan.
 http = HttpClient()

@@ -71,8 +71,9 @@ def test_retries_server_error_then_succeeds(monkeypatch):
 
 
 def test_429_is_not_retried(monkeypatch):
-    """A rate limit counts every attempt against it, so retrying a 429 cannot
-    succeed -- it only spends more of the quota."""
+    """A rate limit counts every attempt against it, so retrying a 429 cannot succeed -- it only spends more of the
+    quota.
+    """
     response, delays, urls = _run(monkeypatch, [httpx.Response(429)])
 
     assert response.status_code == 429

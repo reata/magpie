@@ -1,8 +1,7 @@
 """Star history: page through GitHub's stargazers, then aggregate by day.
 
-GitHub serves stargazers one page at a time and the dashboard wants a cumulative
-daily series, so both the pagination and the date-series construction live here
--- neither belongs to the route, which only knows about the HTTP response.
+GitHub serves stargazers one page at a time and the dashboard wants a cumulative daily series, so both the pagination
+and the date-series construction live here -- neither belongs to the route, which only knows about the HTTP response.
 """
 
 import logging
@@ -30,13 +29,11 @@ def _today() -> date:
 async def star_history(repo: str) -> list[dict]:
     """Cumulative daily star counts, oldest first.
 
-    The series runs from the first star through today: every day has an entry, so
-    a day nobody starred carries ``star_cnt: 0`` and the previous cumulative
-    count, and the tail stays flat instead of stopping at the last star.
+    The series runs from the first star through today: every day has an entry, so a day nobody starred carries
+    ``star_cnt: 0`` and the previous cumulative count, and the tail stays flat instead of stopping at the last star.
 
-    An empty list for a repository without stars: there is nothing to aggregate
-    and no date for the series to start from. Paging through every stargazer is the
-    expensive part, so the result is cached here.
+    An empty list for a repository without stars: there is nothing to aggregate and no date for the series to start
+    from. Paging through every stargazer is the expensive part, so the result is cached here.
     """
     starred_at = await _stargazer_timestamps(repo)
     if not starred_at:
@@ -45,9 +42,8 @@ async def star_history(repo: str) -> list[dict]:
     star_dt = [datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").date() for ts in starred_at]
     counts = Counter(star_dt)
 
-    # min/max rather than the first and last entry: the range must not depend on
-    # the order GitHub returned the pages in. max() against today keeps a
-    # timestamp a few seconds ahead of our clock from emptying the series.
+    # min/max rather than the first and last entry: the range must not depend on the order GitHub returned the pages in.
+    # max() against today keeps a timestamp a few seconds ahead of our clock from emptying the series.
     first, last = min(star_dt), max(max(star_dt), _today())
 
     series = []
@@ -67,8 +63,7 @@ async def _stargazer_timestamps(repo: str) -> list[str]:
     starred_at: list[str] = []
     while True:
         proxy = await http.get(
-            f"https://api.github.com/repos/{repo}/stargazers"
-            f"?per_page={PER_PAGE}&page={page}",
+            f"https://api.github.com/repos/{repo}/stargazers?per_page={PER_PAGE}&page={page}",
             headers={
                 "Accept": "application/vnd.github.v3.star+json",
                 "Authorization": f"token {GITHUB_ACCESS_TOKEN}",
@@ -83,16 +78,15 @@ async def _stargazer_timestamps(repo: str) -> list[str]:
             return starred_at
 
 
-# The dashboard's repository, warmed at startup: paging through it costs one
-# request per hundred stars.
+# The dashboard's repository, warmed at startup: paging through it costs one request per hundred stars.
 PREWARM_REPO = "reata/sqllineage"
 
 
 async def prewarm() -> None:
     """Fill the cache for the dashboard's repository.
 
-    Best effort: GitHub being slow or unreachable must not stop the app from
-    starting, and a later request just pays for the pages itself.
+    Best effort: GitHub being slow or unreachable must not stop the app from starting, and a later request just pays
+    for the pages itself.
     """
     try:
         await star_history(PREWARM_REPO)

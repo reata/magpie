@@ -58,9 +58,7 @@ async def aclose() -> None:
         _client = None
 
 
-async def execute(
-    query: str, parameters: dict[str, Any] | None = None
-) -> list[dict[str, Any]]:
+async def execute(query: str, parameters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Run ``query`` and return its rows as dicts."""
     try:
         client = await get_client()

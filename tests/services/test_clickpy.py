@@ -1,8 +1,7 @@
 """Tests for the ClickPy query layer: name normalisation, shaping and the SQL.
 
-The queries are asserted rather than executed -- the real instance needs
-credentials and a network -- because what the dashboard depends on is the
-contract they encode.
+The queries are asserted rather than executed -- the real instance needs credentials and a network -- because what
+the dashboard depends on is the contract they encode.
 """
 
 import asyncio
@@ -38,8 +37,9 @@ def test_normalize_project_is_pep503():
 
 
 def test_normalization_keeps_distinct_projects_distinct():
-    """``django-rest-framework`` and ``djangorestframework`` are both real,
-    separate projects, so dashes must not be collapsed away."""
+    """``django-rest-framework`` and ``djangorestframework`` are both real, separate projects, so dashes must not be
+    collapsed away.
+    """
     assert normalize_project("Django-REST-Framework") == "django-rest-framework"
     assert normalize_project("djangorestframework") == "djangorestframework"
 
@@ -102,24 +102,14 @@ def test_shape_overall_emits_both_categories_oldest_first():
     ],
 )
 def test_category_mapping(dimension, raw, expected):
-    payload = SPECS[dimension].shape(
-        "pkg", [{"date": DAY, "category": raw, "downloads": 7}]
-    )
+    payload = SPECS[dimension].shape("pkg", [{"date": DAY, "category": raw, "downloads": 7}])
 
     assert payload is not None
-    assert payload["data"] == [
-        {"category": expected, "date": "2026-09-11", "downloads": 7}
-    ]
-    assert payload["type"] == (
-        "python_minor_downloads"
-        if dimension is Dimension.PYTHON_MINOR
-        else "system_downloads"
-    )
+    assert payload["data"] == [{"category": expected, "date": "2026-09-11", "downloads": 7}]
+    assert payload["type"] == ("python_minor_downloads" if dimension is Dimension.PYTHON_MINOR else "system_downloads")
 
 
-@pytest.mark.parametrize(
-    "dimension", [Dimension.OVERALL, Dimension.PYTHON_MINOR, Dimension.SYSTEM]
-)
+@pytest.mark.parametrize("dimension", [Dimension.OVERALL, Dimension.PYTHON_MINOR, Dimension.SYSTEM])
 def test_empty_series_has_no_payload(dimension):
     assert SPECS[dimension].shape("nope", []) is None
 
@@ -136,23 +126,18 @@ def test_only_the_dimensions_the_dashboard_draws_are_supported():
 def test_queries_use_aggregate_tables_only():
     for spec in SPECS.values():
         assert "%(package)s" in spec.sql
-        # The 2.2 trillion row detail table is deliberately never queried: it is
-        # what would exhaust the public instance's read quota.
+        # The 2.2 trillion row detail table is deliberately never queried: it is what would exhaust the public
+        # instance's read quota.
         assert "FROM pypi.pypi\n" not in spec.sql
         assert "pypi.pypi_downloads" in spec.sql
 
 
 @pytest.mark.parametrize("dimension", [Dimension.RECENT, Dimension.OVERALL])
 def test_mirror_downloads_are_excluded_like_pypistats(dimension):
-    assert (
-        "lower(installer) NOT IN ('bandersnatch', 'z3c.pypimirror', "
-        "'artifactory', 'devpi')" in SPECS[dimension].sql
-    )
+    assert "lower(installer) NOT IN ('bandersnatch', 'z3c.pypimirror', 'artifactory', 'devpi')" in SPECS[dimension].sql
 
 
-@pytest.mark.parametrize(
-    "dimension", [Dimension.OVERALL, Dimension.PYTHON_MINOR, Dimension.SYSTEM]
-)
+@pytest.mark.parametrize("dimension", [Dimension.OVERALL, Dimension.PYTHON_MINOR, Dimension.SYSTEM])
 def test_series_are_windowed(dimension):
     assert f"a.d - {WINDOW_DAYS}" in SPECS[dimension].sql
 
@@ -177,8 +162,7 @@ def test_prewarm_queries_every_dimension(monkeypatch):
 
 
 def test_prewarm_survives_a_failing_dimension(monkeypatch):
-    """A cold ClickHouse must not stop the app from starting, nor keep the
-    remaining dimensions from being warmed."""
+    """A cold ClickHouse must not stop the app from starting, nor keep the remaining dimensions from being warmed."""
     calls = []
 
     async def flaky_fetch(*, package, dimension):
@@ -194,6 +178,5 @@ def test_prewarm_survives_a_failing_dimension(monkeypatch):
 
 
 def test_prewarm_is_disabled_for_tests():
-    """The session TestClient runs the real lifespan; a live warm-up would race
-    the per-test fakes."""
+    """The session TestClient runs the real lifespan; a live warm-up would race the per-test fakes."""
     assert services.PREWARM_ENABLED is False

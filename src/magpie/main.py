@@ -75,10 +75,9 @@ app.include_router(meta.router)
 app.include_router(downloads.router)
 app.include_router(github.router)
 
-# Mounted after the routers on purpose: Starlette matches in registration order
-# and a Mount handles everything under its prefix, so any route declared below
-# /api/sqllineage would never be reached. sqllineage ships its own WSGI
-# controllers, hence the mount rather than re-declared routes.
+# Mounted after the routers on purpose: Starlette matches in registration order and a Mount handles everything under its
+# prefix, so any route declared below /api/sqllineage would never be reached. sqllineage ships its own WSGI controllers,
+# hence the mount rather than re-declared routes.
 app.mount("/api/sqllineage", cast(ASGIApp, WSGIMiddleware(sqllineage_app)))
 
 
