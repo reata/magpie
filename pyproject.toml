@@ -8,9 +8,9 @@ dependencies = [
     "a2wsgi>=1.10.10,<2.0.0",
     "async-lru>=2.3.0,<3.0.0",
     "clickhouse-connect[async]>=1.9.0,<2.0.0",
-    "fastapi>=0.141.1,<1.0.0",
+    "fastapi>=0.142.2,<1.0.0",
     "httpx>=0.23.0,<1.0.0",
-    "python-dotenv>=1.2.3,<2.0.0",
+    "python-dotenv>=1.2.4,<2.0.0",
     "sqllineage>=1.5.9,<2.0.0",
     "uvicorn>=0.54.0,<1.0.0",
 ]
@@ -22,7 +22,7 @@ dev = "magpie.main:dev"
 dev = [
     "pre-commit>=4.6.2,<5.0.0",
     "pytest>=9.1.1",
-    "ruff>=0.16.9",
+    "ruff>=0.16.10",
 ]
 
 [tool.uv]
