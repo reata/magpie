@@ -3,7 +3,7 @@ name = "magpie"
 version = "1.0.0"
 description = "API server for reata.github.io"
 readme = "README.md"
-requires-python = "~=3.14.0"
+requires-python = "~=3.15.0"
 dependencies = [
     "a2wsgi>=1.10.10,<2.0.0",
     "async-lru>=2.4.0,<3.0.0",
@@ -29,7 +29,7 @@ dev = [
 add-bounds = "major"
 
 [tool.ruff]
-target-version = "py314"
+target-version = "py315"
 line-length = 120
 lint.select = ["E", "F", "I", "W"]
 
@@ -37,7 +37,7 @@ lint.select = ["E", "F", "I", "W"]
 known-first-party = ["magpie"]
 
 [tool.ty.environment]
-python-version = "3.14"
+python-version = "3.15"
 
 [build-system]
 requires = ["uv_build>=0.13.7,<0.14"]
